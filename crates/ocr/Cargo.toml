@@ -15,6 +15,6 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # models::runtime for why. Nothing to download or link at build time.
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic", "api-27"] }
 flate2 = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 tar = { version = "0.4", default-features = false }
 ureq = "3"
