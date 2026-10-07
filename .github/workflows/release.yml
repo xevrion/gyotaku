@@ -321,7 +321,12 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" dist/* --generate-notes --title "gyotaku $TAG" --repo "$GITHUB_REPOSITORY"
+            # GitHub's generated notes with one line under them. gh can only
+            # put its own text above generated notes, so they are fetched
+            # first and the line appended.
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" --jq .body > notes.md
+            printf '\n---\n\ngyotaku is free and stays free. If it saves you time, [sponsoring](https://github.com/sponsors/xevrion) keeps it maintained.\n' >> notes.md
+            gh release create "$TAG" dist/* --notes-file notes.md --title "gyotaku $TAG" --repo "$GITHUB_REPOSITORY"
           fi
 
   # The installers, run against what was just published.

@@ -26,6 +26,12 @@ gyotaku reads the text in every screenshot you take and makes it searchable. Pre
 
 All processing happens locally. gyotaku does not take screenshots itself; it indexes the folders your existing screenshot tool saves to.
 
+## Support gyotaku
+
+gyotaku is free and stays free. If it saves you time, sponsoring keeps it maintained.
+
+[Sponsor on GitHub](https://github.com/sponsors/xevrion) · [Get updates by email](https://gyotaku.app/#updates)
+
 ## Highlights
 
 | Metric | Result |

@@ -15,11 +15,11 @@ export type FaqItem = {
 export const FAQ: FaqItem[] = [
   {
     q: "Is it really free?",
-    text: "Yes. gyotaku is open source under the GPL-3.0, with no paid tier, account or limits. The code is on GitHub.",
+    text: "Yes. gyotaku is open source under the GPL-3.0, and the core stays free and open source forever, with no account or limits. The code is on GitHub.",
     rich: (
       <>
-        Yes. gyotaku is open source under the GPL-3.0, with no paid tier, account
-        or limits. The code is on{" "}
+        Yes. gyotaku is open source under the GPL-3.0, and the core stays free
+        and open source forever, with no account or limits. The code is on{" "}
         <a href={REPO} className="text-ink underline decoration-line-strong underline-offset-4 hover:decoration-current">
           GitHub
         </a>

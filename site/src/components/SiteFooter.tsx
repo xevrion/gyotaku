@@ -2,14 +2,15 @@ import { Row } from "./Frame";
 import { GithubIcon } from "./Header";
 import { Mark } from "./Mark";
 import { StarCount } from "./GithubStars";
-import { REPO, REPO_SLUG, SAVED_STARS } from "@/lib/links";
+import { BUTTONDOWN, REPO, REPO_SLUG, SAVED_STARS, SPONSOR } from "@/lib/links";
 
 const INSET = "px-5 sm:px-8 lg:px-12";
 
 export function SiteFooter({ stars = SAVED_STARS }: { stars?: number }) {
   return (
     <Row as="footer" divider={false} inner={`${INSET} pt-12 pb-16`}>
-      <div className="flex flex-col gap-10 text-sm text-dim sm:flex-row sm:justify-between">
+      <Updates />
+      <div className="mt-12 flex flex-col gap-10 border-t border-line pt-12 text-sm text-dim sm:flex-row sm:justify-between">
         <div className="max-w-sm">
           <a href="/" className="flex items-center gap-2.5 font-medium text-ink">
             <Mark size={22} className="rounded-[6px]" />
@@ -26,6 +27,19 @@ export function SiteFooter({ stars = SAVED_STARS }: { stars?: number }) {
               xevrion
             </a>
           </p>
+          <p className="mt-5 leading-relaxed">
+            gyotaku is free and stays free. If it saves you time, sponsoring
+            keeps it maintained.
+          </p>
+          <a
+            href={SPONSOR}
+            className="press mt-3 inline-flex h-9 items-center gap-2 rounded-[10px] border border-line px-3.5 text-[14px] font-medium text-ink hover:border-line-strong"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden className="size-3.5" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round">
+              <path d="M8 13.5S2 10 2 5.75A2.75 2.75 0 0 1 8 4.5a2.75 2.75 0 0 1 6 1.25C14 10 8 13.5 8 13.5Z" />
+            </svg>
+            Sponsor gyotaku
+          </a>
         </div>
         <div className="grid grid-cols-2 gap-x-10 gap-y-8 self-start sm:grid-cols-[auto_auto]">
           <nav aria-label="Systems" className="flex flex-col gap-2">
@@ -49,6 +63,63 @@ export function SiteFooter({ stars = SAVED_STARS }: { stars?: number }) {
         </div>
       </div>
     </Row>
+  );
+}
+
+// The email signup. A plain form that posts straight to Buttondown, with no
+// script of theirs on the page. Until the newsletter exists, the same spot
+// points at watching releases on GitHub, so links to #updates (from the app
+// and the README) always land on something that works.
+function Updates() {
+  return (
+    <section
+      id="updates"
+      aria-labelledby="updates-title"
+      className="flex scroll-mt-20 flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div>
+        <h2 id="updates-title" className="text-[17px] font-medium text-ink">
+          Get updates
+        </h2>
+        <p className="mt-1 text-sm text-dim">New releases and features, no spam.</p>
+      </div>
+      {BUTTONDOWN ? (
+        <form
+          action={`https://buttondown.com/api/emails/embed-subscribe/${BUTTONDOWN}`}
+          method="post"
+          target="_blank"
+          className="flex w-full gap-2 sm:w-auto"
+        >
+          <label htmlFor="updates-email" className="sr-only">
+            Email address
+          </label>
+          <input
+            id="updates-email"
+            type="email"
+            name="email"
+            required
+            autoComplete="email"
+            placeholder="you@example.com"
+            className="h-10 min-w-0 flex-1 rounded-[10px] border border-line bg-panel px-3 text-base text-ink outline-hidden placeholder:text-faint focus-visible:border-line-strong sm:w-64 sm:flex-none sm:text-sm"
+          />
+          <input type="hidden" name="embed" value="1" />
+          <button
+            type="submit"
+            className="press h-10 shrink-0 rounded-[10px] bg-ink px-4 text-sm font-medium text-bg"
+          >
+            Subscribe
+          </button>
+        </form>
+      ) : (
+        <a
+          href={REPO}
+          className="press inline-flex h-10 items-center gap-2 self-start rounded-[10px] border border-line px-4 text-sm font-medium text-ink hover:border-line-strong sm:self-auto"
+        >
+          <GithubIcon className="size-3.5" />
+          Watch releases on GitHub
+        </a>
+      )}
+    </section>
   );
 }
 

@@ -59,8 +59,16 @@ enum Row {
     Script(usize),
     Threads,
     ClearThumbs,
+    Support,
+    Updates,
     Shortcut(usize),
 }
+
+// Both open in the browser through the system; the app itself never touches
+// the network for them. Updates goes to the site's signup rather than the
+// mailing list directly, so the list can move without a release.
+const SPONSOR_URL: &str = "https://github.com/sponsors/xevrion";
+const UPDATES_URL: &str = "https://gyotaku.app/#updates";
 
 impl Settings {
     fn rows(&self) -> Vec<Row> {
@@ -73,7 +81,7 @@ impl Settings {
             Row::Clipboard,
         ]);
         rows.extend((0..Script::ALL.len()).map(Row::Script));
-        rows.extend([Row::Threads, Row::ClearThumbs]);
+        rows.extend([Row::Threads, Row::ClearThumbs, Row::Support, Row::Updates]);
         rows.extend((0..SHORTCUTS.len()).map(Row::Shortcut));
         rows
     }
@@ -279,6 +287,8 @@ impl Gyotaku {
                         }
                         Some(Row::Threads) => self.change_threads(1, cx),
                         Some(Row::ClearThumbs) => self.clear_thumbnails(cx),
+                        Some(Row::Support) => cx.open_url(SPONSOR_URL),
+                        Some(Row::Updates) => cx.open_url(UPDATES_URL),
                         Some(Row::Shortcut(i)) => self.start_recording(i, cx),
                         Some(Row::Folder(_)) | None => {}
                     },
@@ -988,6 +998,31 @@ impl Gyotaku {
                                 this.clear_thumbnails(cx);
                             }),
                         ))
+                        .into_any_element()
+                }
+                Row::Support | Row::Updates => {
+                    let (title, detail) = if matches!(*row, Row::Support) {
+                        list.push(section("gyotaku"));
+                        (
+                            "support gyotaku",
+                            "free and stays free, sponsoring keeps it maintained",
+                        )
+                    } else {
+                        (
+                            "get updates",
+                            "new releases and features by email, signed up on gyotaku.app",
+                        )
+                    };
+                    self.row(ix, selected, theme, cx, Some(Key::Enter))
+                        .child(
+                            div()
+                                .flex_1()
+                                .flex()
+                                .flex_col()
+                                .child(title)
+                                .child(div().text_xs().text_color(theme.muted).child(detail)),
+                        )
+                        .child(on_row_hover(ix, selected, hint("enter", "open", theme)))
                         .into_any_element()
                 }
                 Row::Shortcut(k) => {
