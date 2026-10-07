@@ -41,6 +41,37 @@ pub const WORDS: Words = Words {
     copy_image_failed: "couldn't copy the image",
 };
 
+/// The Mac namespace: Cmd where Linux and Windows say Ctrl, written
+/// `cmd` the way gpui spells the platform modifier back when recording.
+/// Returning None means the shared default stands; every shortcut is
+/// overridden today.
+pub fn default_key(name: &str) -> Option<&'static str> {
+    match name {
+        "copy_text" => Some("cmd-c"),
+        "copy_image" => Some("cmd-shift-c"),
+        "open" => Some("cmd-o"),
+        "reveal" => Some("cmd-shift-o"),
+        "similar" => Some("cmd-e"),
+        "mark_all" => Some("cmd-shift-a"),
+        // Tested on a real Mac keyboard: Cmd+Delete fires this, the
+        // mechanical Cmd swap of the shared Ctrl default.
+        "trash" => Some("cmd-delete"),
+        "undo" => Some("cmd-z"),
+        "settings" => Some("cmd-,"),
+        // No key: cmd-q and cmd-w already put the window away through
+        // hide_keys, and Quit in the window context would win and exit the
+        // app, killing the summon key until relaunch. Quitting on macOS
+        // stays in the menu bar icon's menu.
+        "quit" => Some(""),
+        "add_folder" => Some("cmd-o"),
+        _ => None,
+    }
+}
+
+/// The platform modifier as hints spell it: the command mark, the way Mac
+/// apps show it. Rendered through the system font fallback.
+pub const MODIFIER_NAME: &str = "⌘";
+
 // Staying resident. macOS has unix sockets, and its TMPDIR is already one
 // per user; tagging the name with the uid keeps it that way if TMPDIR is
 // ever pointed somewhere shared.

@@ -62,7 +62,7 @@ pub use imp::SYSTEM_FRAMES_WINDOW;
 // and Windows: no Dock or taskbar button to quit by accident, an icon in the
 // menu bar or notification area with the way back in and the way out, and
 // the system's close keys putting the window away instead of quitting.
-pub use imp::{hide_keys, settle_in};
+pub use imp::{MODIFIER_NAME, default_key, hide_keys, settle_in};
 
 // Getting the system's folder picker in front of everything.
 pub use imp::before_picker;

@@ -28,7 +28,7 @@ By hand:
 The first run downloads the OCR models once (about 22 MB). After that
 everything happens on this computer, nothing is uploaded.
 
-To remove it: turn off background reading in settings (Ctrl+,), quit
+To remove it: turn off background reading in settings (Cmd+,), quit
 from the menu bar icon, and delete the folder. The index lives in
 ~/Library/Application Support/gyotaku.
 

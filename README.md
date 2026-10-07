@@ -226,6 +226,8 @@ If anything does not work as described, see [Troubleshooting](docs/troubleshooti
 | Ctrl+Shift+A, Ctrl+Delete | Mark every result, then move them to the trash. Ctrl+Z puts them back. |
 | Escape | Clear the search, then close |
 
+On macOS each Ctrl shortcut above is Cmd instead.
+
 Every word in a query must appear somewhere in the screenshot, not necessarily on the same line. Filters narrow it down by folder and date: `otp in:discord date:week`. On an open screenshot, drag a box to copy only the lines inside it.
 
 A command-line interface is also available:

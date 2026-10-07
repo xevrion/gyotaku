@@ -86,7 +86,7 @@ Screenshots of the same thing taken close together, like a chat captured a few t
 | Ctrl+Z | Put back what was last moved to the trash | |
 | Escape | Cancel a pending move, clear marks, clear the search, then close the window | Return to the grid |
 
-The command shortcuts above are defaults and can be changed in settings, see [Settings](#settings). Changes are stored in `config.toml` under `[keys]`, for example `trash = "ctrl-backspace"`; an entry that is invalid or already in use falls back to the default.
+The command shortcuts above are defaults and can be changed in settings, see [Settings](#settings). Changes are stored in `config.toml` under `[keys]`, for example `trash = "ctrl-backspace"`; an entry that is invalid or already in use falls back to the default. On macOS each default uses Cmd instead of Ctrl, written `cmd` in `config.toml` (for example `settings = "cmd-,"`).
 
 The shortcut bound to `gyotaku-app` also closes the window. When reopened, the window restores its previous state: the same query, selection and open screenshot.
 

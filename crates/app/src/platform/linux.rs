@@ -129,6 +129,14 @@ pub fn hide_keys() -> &'static [&'static str] {
     &[]
 }
 
+/// No override: the shared `ctrl` defaults in `keys.rs` stand.
+pub fn default_key(_name: &str) -> Option<&'static str> {
+    None
+}
+
+/// The platform modifier as hints spell it: Super on Linux.
+pub const MODIFIER_NAME: &str = "super";
+
 // The clipboard. A Wayland clipboard is served by the app that set it, so
 // whatever gpui copies vanishes the moment this window closes. wl-copy forks
 // a tiny process that keeps serving it, which is what makes "copy, esc,
