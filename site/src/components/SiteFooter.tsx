@@ -1,5 +1,5 @@
 import { Row } from "./Frame";
-import { GithubIcon } from "./Header";
+import { GithubIcon, HeartIcon } from "./Header";
 import { Mark } from "./Mark";
 import { StarCount } from "./GithubStars";
 import { BUTTONDOWN, REPO, REPO_SLUG, SAVED_STARS, SPONSOR } from "@/lib/links";
@@ -35,9 +35,7 @@ export function SiteFooter({ stars = SAVED_STARS }: { stars?: number }) {
             href={SPONSOR}
             className="press mt-3 inline-flex h-9 items-center gap-2 rounded-[10px] border border-line px-3.5 text-[14px] font-medium text-ink hover:border-line-strong"
           >
-            <svg viewBox="0 0 16 16" aria-hidden className="size-3.5" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round">
-              <path d="M8 13.5S2 10 2 5.75A2.75 2.75 0 0 1 8 4.5a2.75 2.75 0 0 1 6 1.25C14 10 8 13.5 8 13.5Z" />
-            </svg>
+            <HeartIcon className="size-3.5" />
             Sponsor gyotaku
           </a>
         </div>

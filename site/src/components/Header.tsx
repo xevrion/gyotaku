@@ -6,7 +6,7 @@ import { Mark } from "./Mark";
 import { StarCount } from "./GithubStars";
 import { ThemeToggle } from "./ThemeToggle";
 import { Row } from "./Frame";
-import { REPO, REPO_SLUG, SAVED_STARS } from "@/lib/links";
+import { REPO, REPO_SLUG, SAVED_STARS, SPONSOR } from "@/lib/links";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
 
 // The top edge of the page's frame: the same rails and corner squares as
@@ -109,6 +109,13 @@ export function Header({ stars = SAVED_STARS, base = "" }: { stars?: number; bas
 
         <div className="flex items-center gap-1 justify-self-end">
           <a
+            href={SPONSOR}
+            className="press group hidden h-9 items-center gap-1.5 rounded-lg px-2.5 text-[14px] text-dim hover:text-ink md:flex"
+          >
+            <HeartIcon className="size-3.5 transition-[color,fill] duration-150 group-hover:fill-shu group-hover:text-shu" />
+            Sponsor
+          </a>
+          <a
             href={REPO}
             className="press hidden h-9 items-center gap-1.5 rounded-lg px-2.5 text-[14px] text-dim hover:text-ink sm:flex"
           >
@@ -173,6 +180,14 @@ export function Header({ stars = SAVED_STARS, base = "" }: { stars?: number; bas
               {l.label}
             </a>
           ))}
+          <a
+            href={SPONSOR}
+            onClick={() => setOpen(false)}
+            className="flex h-12 items-center gap-2.5 text-[17px] text-ink"
+          >
+            <HeartIcon className="size-4 text-shu" />
+            Sponsor gyotaku
+          </a>
           <div className="mt-4 flex items-center gap-2">
             <a
               href={`${base}#install`}
@@ -192,6 +207,14 @@ export function Header({ stars = SAVED_STARS, base = "" }: { stars?: number; bas
         </nav>
       </div>
     </Row>
+  );
+}
+
+export function HeartIcon({ className = "size-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden className={className} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round">
+      <path d="M8 13.5S2 10 2 5.75A2.75 2.75 0 0 1 8 4.5a2.75 2.75 0 0 1 6 1.25C14 10 8 13.5 8 13.5Z" />
+    </svg>
   );
 }
 
