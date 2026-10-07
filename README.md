@@ -92,7 +92,7 @@ Config, index and models live in `~/Library/Application Support/gyotaku`, thumbn
 
 ### Keyboard shortcut (Linux and macOS)
 
-On macOS the app registers the shortcut itself: `Alt+Shift+S` opens the search window, and pressing it again closes it. The key can be changed in the settings.
+On macOS the app registers the shortcut itself: `Alt+Shift+S` opens the search window, and pressing it again closes it. To use another key, set `summon` under `[keys]` in `config.toml` (for example `summon = "cmd-shift-space"`) and restart gyotaku; it isn't in the settings yet.
 
 On Linux, `gyotaku-app` opens the search window, and pressing the same shortcut again closes it. Bind it in your desktop's keyboard settings, using the full path `~/.local/bin/gyotaku-app`, since some desktops do not use your shell's `PATH`:
 
