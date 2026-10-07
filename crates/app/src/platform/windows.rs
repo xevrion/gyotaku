@@ -18,8 +18,8 @@ use futures::channel::mpsc::UnboundedSender;
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::{
-    App, Bounds, ClipboardItem, Entity, Global, Size, Window, WindowBackgroundAppearance,
-    WindowBounds, WindowHandle, WindowKind, WindowOptions,
+    App, Bounds, ClipboardItem, DisplayId, Entity, Global, Size, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions,
 };
 
 use super::{Service, TrayCommand, Words};
@@ -103,8 +103,9 @@ pub fn listen(port_file: &Path) -> Option<Listener> {
 // The window.
 
 /// A borderless window that stays on top and out of the taskbar, centred on
-/// the screen, the way a launcher sits.
+/// `display`, the way a launcher sits.
 pub fn open_launcher(
+    display: Option<DisplayId>,
     size: Size<gpui::Pixels>,
     cx: &mut App,
     build: impl FnOnce(&mut Window, &mut App) -> Entity<Gyotaku> + 'static,
@@ -113,7 +114,12 @@ pub fn open_launcher(
         .open_window(
             WindowOptions {
                 titlebar: None,
-                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size, cx))),
+                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(display, size, cx))),
+                // Both halves are needed: the bounds say where on the desktop,
+                // and this says which monitor they are meant for. Without it
+                // gpui checks them against the primary monitor, finds they are
+                // somewhere else, and falls back to its own default bounds.
+                display_id: display,
                 app_id: Some("gyotaku".into()),
                 window_background: WindowBackgroundAppearance::Transparent,
                 kind: WindowKind::PopUp,
@@ -126,20 +132,130 @@ pub fn open_launcher(
     Some(window)
 }
 
+/// The monitor being worked on: the one the foreground window is on, then
+/// the one the pointer is on, then `None` for gpui's primary.
+///
+/// The two signals disagree, and the order matters. The window comes up on a
+/// key pressed while typing somewhere else, so attention is at the focused
+/// window, and the pointer is often left behind on another screen entirely.
+/// The pointer is only reached when there is no foreground window at all,
+/// which happens while activation is changing hands and on the secure
+/// desktop, and then it is the only thing left to go on.
+pub fn active_display() -> Option<DisplayId> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::{
+        HMONITOR, MONITOR_DEFAULTTONEAREST, MonitorFromPoint, MonitorFromWindow,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow};
+
+    /// gpui builds a Windows display id straight from the monitor handle, so
+    /// the handle is the id and nothing has to be matched up by coordinates.
+    fn id_of(monitor: HMONITOR) -> Option<DisplayId> {
+        (!monitor.is_null()).then(|| DisplayId::new(monitor as usize as u64))
+    }
+
+    // SAFETY: each call reads something the system owns and hands back a
+    // monitor handle or nothing. `MonitorFromWindow` is only asked about a
+    // window the system just named as foreground, and `GetCursorPos` writes
+    // a POINT it is given by pointer. A handle that has gone stale or a
+    // cursor read that fails costs the guess, not correctness: every step
+    // falls through, and the end of the chain is today's behaviour.
+    unsafe {
+        let foreground = GetForegroundWindow();
+        let focused = (!foreground.is_null())
+            .then(|| id_of(MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST)))
+            .flatten();
+        focused.or_else(|| {
+            let mut cursor = POINT::default();
+            (GetCursorPos(&mut cursor) != 0)
+                .then(|| id_of(MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST)))
+                .flatten()
+        })
+    }
+}
+
+/// Puts the window in the middle of `display`, where it was asked to go.
+///
+/// gpui turns the bounds it is given into pixels with the scale factor of the
+/// monitor the window was created on, which is the primary one, so when two
+/// monitors are scaled differently the window reaches the right monitor at
+/// the wrong place, far enough over to hang off an edge. Windows has settled
+/// its size for the new monitor by the time this runs, so the position is all
+/// that is left to put right.
+pub fn settle_position(window: WindowHandle<Gyotaku>, display: Option<DisplayId>, cx: &mut App) {
+    let Some(display) = display else { return };
+    let Ok(Some(hwnd)) = window.update(cx, |_, window, _| raw_handle(window)) else {
+        return;
+    };
+    // Moved from a task rather than here and now. Moving a window tells gpui
+    // the window moved, and gpui answers by asking for the app, which this
+    // call is holding; it would log that it could not and go on with a stale
+    // idea of where the window is. A handle is not `Send`, so it travels as
+    // the number it is.
+    let hwnd = hwnd as usize;
+    cx.foreground_executor()
+        .spawn(async move { centre_on(hwnd, display) })
+        .detach();
+}
+
+/// The move itself, once gpui is free to hear about it.
+fn centre_on(hwnd: usize, display: DisplayId) {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowRect, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+    };
+
+    let hwnd = hwnd as *mut std::ffi::c_void;
+    // The id is the monitor handle; `active_display` made it from one.
+    let monitor = u64::from(display) as usize as HMONITOR;
+    let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
+    info.cbSize = size_of::<MONITORINFO>() as u32;
+    let mut window_rect: RECT = unsafe { std::mem::zeroed() };
+    // SAFETY: the handle is this live window's and the monitor's came from
+    // the system. Both calls write into a struct of the size they are given,
+    // and the window stays where it is if either of them has nothing to say.
+    unsafe {
+        if GetMonitorInfoW(monitor, &mut info) == 0 || GetWindowRect(hwnd, &mut window_rect) == 0 {
+            return;
+        }
+        let screen = info.rcMonitor;
+        let left = screen.left
+            + ((screen.right - screen.left) - (window_rect.right - window_rect.left)) / 2;
+        let top = screen.top
+            + ((screen.bottom - screen.top) - (window_rect.bottom - window_rect.top)) / 2;
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            left,
+            top,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
+/// This window's handle, for the few things gpui has no say in.
+fn raw_handle(window: &Window) -> Option<windows_sys::Win32::Foundation::HWND> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    // Spelled out: gpui's Window has an inherent `window_handle` of its own.
+    let handle = HasWindowHandle::window_handle(window).ok()?;
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return None;
+    };
+    Some(handle.hwnd.get() as _)
+}
+
 /// Asks DWM for Windows 11's rounded window corners. A tool-window popup
 /// isn't always given them by default, and then its border and shadow come
 /// out square. Windows 10 doesn't know the attribute and keeps the square
 /// frame, which the square panel matches too.
 fn round_corners(window: &Window) {
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use windows_sys::Win32::Graphics::Dwm::{
         DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
     };
-    // Spelled out: gpui's Window has an inherent `window_handle` of its own.
-    let Ok(handle) = HasWindowHandle::window_handle(window) else {
-        return;
-    };
-    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+    let Some(hwnd) = raw_handle(window) else {
         return;
     };
     let preference = DWMWCP_ROUND;
@@ -147,7 +263,7 @@ fn round_corners(window: &Window) {
     // a DWM_WINDOW_CORNER_PREFERENCE read from the pointer for its size.
     unsafe {
         DwmSetWindowAttribute(
-            handle.hwnd.get() as _,
+            hwnd,
             DWMWA_WINDOW_CORNER_PREFERENCE as u32,
             (&raw const preference).cast(),
             size_of_val(&preference) as u32,

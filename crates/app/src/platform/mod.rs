@@ -8,6 +8,7 @@
 //! | | Linux | Windows | macOS |
 //! |---|---|---|---|
 //! | the window | a layer-shell overlay on Wayland, an ordinary window elsewhere | a borderless popup above everything | a borderless popup above everything |
+//! | which monitor | the compositor's, which is the output being used, for the Wayland overlay; the primary monitor otherwise | the monitor the foreground window is on | the primary monitor |
 //! | while it waits | nothing on screen, the desktop's shortcut is the way in | a notification area icon, no taskbar button | a menu bar icon, no Dock icon |
 //! | summoning it | the desktop's own shortcut runs `gyotaku-app` | a global hotkey the app registers | a global hotkey the app registers |
 //! | waking the running copy | a unix socket | a loopback port | a unix socket |
@@ -50,6 +51,18 @@ pub use imp::{listen, resident_address, wake};
 
 // The window, and the key that brings it up.
 pub use imp::{hides_when_inactive, open_launcher, register_summon, take_focus};
+
+// Which monitor to open on. The key is pressed while working in another app,
+// often on another screen, and a window that opens where the work isn't is a
+// window you have to look away to use. `None` leaves the choice to gpui,
+// which centres on the primary monitor.
+pub use imp::active_display;
+
+// And whether the window landed there. Windows converts the position it is
+// given with the wrong monitor's scaling when two monitors are scaled
+// differently, so it needs the window moved once it is open; the other
+// systems put it in the right place the first time.
+pub use imp::settle_position;
 
 // Who draws the window's corners. macOS and Windows give the popup a frame of
 // their own (rounded where the system rounds, with its rim and shadow along

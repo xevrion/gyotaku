@@ -10,8 +10,8 @@ use std::process::{Command, Stdio};
 
 use futures::channel::mpsc::UnboundedSender;
 use gpui::{
-    App, Bounds, ClipboardItem, Entity, Size, Window, WindowBackgroundAppearance, WindowBounds,
-    WindowHandle, WindowKind, WindowOptions,
+    App, Bounds, ClipboardItem, DisplayId, Entity, Size, Window, WindowBackgroundAppearance,
+    WindowBounds, WindowHandle, WindowKind, WindowOptions,
 };
 
 use super::{Service, TrayCommand, Words};
@@ -64,11 +64,26 @@ pub fn listen(socket: &Path) -> Option<Listener> {
 
 // The window.
 
+/// The monitor being worked on. Always `None`: the overlay is a layer shell
+/// surface, and the compositor puts it on the output being used, which is
+/// the answer this would be looking for. `LayerShellOptions` has no output
+/// to name anyway. The ordinary window opened elsewhere gets the primary
+/// monitor, as before.
+pub fn active_display() -> Option<DisplayId> {
+    None
+}
+
+/// Nothing to put right: the compositor places the overlay, and an ordinary
+/// window opens where it is told.
+pub fn settle_position(_window: WindowHandle<Gyotaku>, _display: Option<DisplayId>, _cx: &mut App) {
+}
+
 /// On Wayland compositors with layer shell (niri, sway, Hyprland, KDE) the
 /// window floats above everything like a launcher, with no title bar and all
 /// keyboard input going to it. None elsewhere (X11, GNOME), where an
 /// ordinary window is opened instead.
 pub fn open_launcher(
+    _display: Option<DisplayId>,
     size: Size<gpui::Pixels>,
     cx: &mut App,
     build: impl FnOnce(&mut Window, &mut App) -> Entity<Gyotaku> + 'static,

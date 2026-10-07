@@ -42,6 +42,8 @@ tray-icon = { version = "0.26", default-features = false }
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
+    # MonitorFrom*, to open the window on the monitor being worked on.
+    "Win32_Graphics_Gdi",
     "Win32_System_DataExchange",
     "Win32_System_Memory",
     "Win32_UI_WindowsAndMessaging",
