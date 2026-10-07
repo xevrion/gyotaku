@@ -252,7 +252,7 @@ gyotaku runs entirely on your machine. It has no telemetry, accounts or update c
 - [x] A landing page with a demo, the measured numbers and the install commands
 - [x] Windows support
 - [x] macOS support on Apple Silicon (thanks to [@saurav-codes](https://github.com/saurav-codes))
-- [ ] macOS: shortcuts shown and bound with ⌘ instead of Ctrl, the way Mac apps do
+- [x] macOS: shortcuts shown and bound with ⌘ instead of Ctrl, the way Mac apps do (thanks to [@Chiroyce1](https://github.com/Chiroyce1))
 - [ ] macOS: confirm the summon key works after a real reboot, with the launch agent starting the app hidden
 - [ ] macOS on Intel Macs
 - [ ] Optional classification of screenshots (one-time codes, receipts, chats) with Jev, to find and clear out the throwaway ones. Opt-in and off by default; only the recognized text is sent, never the image

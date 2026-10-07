@@ -29,7 +29,7 @@ async function stars(): Promise<number> {
   }
 }
 
-const VERSION = "0.1.5";
+const VERSION = "0.1.6";
 
 // Everything gyotaku ever does over the network. Kept honest with the
 // README's Privacy section.
