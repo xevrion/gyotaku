@@ -15,7 +15,7 @@ use futures::channel::mpsc::UnboundedSender;
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::{
-    App, Bounds, ClipboardItem, Entity, Global, Image, ImageFormat, Size, Window,
+    App, Bounds, ClipboardItem, DisplayId, Entity, Global, Image, ImageFormat, Size, Window,
     WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions,
 };
 use objc2::MainThreadMarker;
@@ -103,10 +103,23 @@ pub fn listen(socket: &Path) -> Option<Listener> {
 
 // The window.
 
-/// A borderless panel that floats above everything, centred on the screen,
+/// The monitor being worked on. Always `None` for now, which centres on the
+/// primary one the way it always has. Following the active display here
+/// needs the frontmost app's window or the cursor from CoreGraphics, neither
+/// of which this crate has a dependency for yet.
+pub fn active_display() -> Option<DisplayId> {
+    None
+}
+
+/// Nothing to put right: a panel opens where it is told.
+pub fn settle_position(_window: WindowHandle<Gyotaku>, _display: Option<DisplayId>, _cx: &mut App) {
+}
+
+/// A borderless panel that floats above everything, centred on `display`,
 /// the way Spotlight sits. gpui makes a pop-up on macOS an NSPanel, so it
 /// never takes focus from what you're working on.
 pub fn open_launcher(
+    display: Option<DisplayId>,
     size: Size<gpui::Pixels>,
     cx: &mut App,
     build: impl FnOnce(&mut Window, &mut App) -> Entity<Gyotaku> + 'static,
@@ -114,7 +127,8 @@ pub fn open_launcher(
     cx.open_window(
         WindowOptions {
             titlebar: None,
-            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size, cx))),
+            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(display, size, cx))),
+            display_id: display,
             app_id: Some("gyotaku".into()),
             window_background: WindowBackgroundAppearance::Transparent,
             kind: WindowKind::PopUp,

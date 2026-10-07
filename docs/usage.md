@@ -16,6 +16,8 @@
 
 Open the search window with your shortcut and start typing. Results update on every keystroke.
 
+The window opens on the monitor being worked on wherever the system can say which one that is: on Windows, the monitor holding the window that was in front; on Wayland, the output the compositor treats as in use. Elsewhere it opens on the primary monitor.
+
 | Behavior | Detail |
 |---|---|
 | Partial matching | Any substring matches. `nutsmp` finds `donutsmp.net`, and `invoi` finds `invoice`. Words the OCR misread slightly remain findable from their correct parts. |

@@ -17,8 +17,8 @@ use std::borrow::Cow;
 use anyhow::Result;
 use futures::StreamExt as _;
 use gpui::{
-    App, AppContext, Bounds, Entity, Global, QuitMode, Size, TitlebarOptions, WindowBounds,
-    WindowOptions, px, size,
+    App, AppContext, Bounds, DisplayId, Entity, Global, QuitMode, Size, TitlebarOptions,
+    WindowBounds, WindowOptions, px, size,
 };
 use gpui_platform::application;
 use gyotaku_core::Index;
@@ -202,13 +202,17 @@ pub(crate) fn summon(cx: &mut App) {
         return;
     }
     let windowed = cx.try_global::<Launch>().is_some_and(|l| l.windowed);
-    let size = window_size(cx);
+    // Settled once per summon, so the window is measured for the same screen
+    // it opens on. Asking twice could read two different monitors.
+    let display = platform::active_display();
+    let size = window_size(display, cx);
     let window = if windowed {
         None
     } else {
-        platform::open_launcher(size, cx, |window, cx| root(true, window, cx))
+        platform::open_launcher(display, size, cx, |window, cx| root(true, window, cx))
     };
-    let window = window.unwrap_or_else(|| open_window(size, cx));
+    let window = window.unwrap_or_else(|| open_window(display, size, cx));
+    platform::settle_position(window, display, cx);
     let _ = window.update(cx, |view, window, cx| {
         window.focus(&gpui::Focusable::focus_handle(view, cx), cx);
         cx.activate(true);
@@ -217,10 +221,12 @@ pub(crate) fn summon(cx: &mut App) {
     platform::revive_reader();
 }
 
-/// A generous palette, but never more than most of the screen.
-fn window_size(cx: &App) -> Size<gpui::Pixels> {
-    let screen = cx
-        .primary_display()
+/// A generous palette, but never more than most of the screen: the one it is
+/// about to open on, which can be the smaller of several.
+fn window_size(display: Option<DisplayId>, cx: &App) -> Size<gpui::Pixels> {
+    let screen = display
+        .and_then(|id| cx.find_display(id))
+        .or_else(|| cx.primary_display())
         .map(|d| d.bounds().size)
         .unwrap_or(size(px(1920.), px(1080.)));
     size(
@@ -246,10 +252,15 @@ fn root(floating: bool, window: &mut gpui::Window, cx: &mut App) -> Entity<Gyota
     view
 }
 
-fn open_window(size: Size<gpui::Pixels>, cx: &mut App) -> gpui::WindowHandle<Gyotaku> {
+fn open_window(
+    display: Option<DisplayId>,
+    size: Size<gpui::Pixels>,
+    cx: &mut App,
+) -> gpui::WindowHandle<Gyotaku> {
     cx.open_window(
         WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size, cx))),
+            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(display, size, cx))),
+            display_id: display,
             titlebar: Some(TitlebarOptions {
                 title: Some("gyotaku".into()),
                 ..Default::default()
