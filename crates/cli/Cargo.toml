@@ -13,7 +13,7 @@ gyotaku-ocr.workspace = true
 anyhow.workspace = true
 directories.workspace = true
 clap = { version = "4.6", features = ["derive"] }
-fast_image_resize = { version = "5", features = ["image"] }
+fast_image_resize = { version = "6", features = ["image"] }
 image = { version = "0.25", default-features = false, features = ["bmp", "jpeg", "png"] }
 jiff = "0.2"
 notify = "8"

@@ -9,7 +9,7 @@ repository.workspace = true
 [dependencies]
 gyotaku-core.workspace = true
 anyhow.workspace = true
-fast_image_resize = { version = "5", features = ["image"] }
+fast_image_resize = { version = "6", features = ["image"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 # Loaded at run time from Microsoft's own build rather than linked, see
 # models::runtime for why. Nothing to download or link at build time.
