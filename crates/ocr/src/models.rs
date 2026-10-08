@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -11,6 +12,32 @@ pub struct Model {
     /// Tried in order until one gives the file with the right hash.
     urls: &'static [&'static str],
     sha256: &'static str,
+}
+
+/// How far along a download is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Download {
+    pub file: &'static str,
+    pub done: u64,
+    /// None when the server doesn't say how much is coming.
+    pub total: Option<u64>,
+}
+
+type Watcher = Box<dyn Fn(Download) + Send>;
+
+static WATCHER: Mutex<Option<Watcher>> = Mutex::new(None);
+
+/// Has `f` called as a model or the runtime downloads, a few times a second
+/// at most, so a window can show how far along it is instead of nothing for
+/// a minute. One watcher at a time; a new one replaces the last.
+pub fn watch_downloads(f: impl Fn(Download) + Send + 'static) {
+    *WATCHER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(f));
+}
+
+fn tell(download: Download) {
+    if let Some(f) = WATCHER.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        f(download);
+    }
 }
 
 // PP-OCRv6 exported to onnx by the RapidOCR folks, pinned by hash so a
@@ -165,7 +192,7 @@ pub fn ensure(model: &Model) -> Result<PathBuf> {
     eprintln!("downloading {} (first run only)", model.file);
     let mut failures = Vec::new();
     for url in model.urls {
-        match fetch(url, model.sha256) {
+        match fetch(model.file, url, model.sha256) {
             Ok(bytes) => {
                 write_atomically(&path, &bytes)?;
                 return Ok(path);
@@ -205,7 +232,7 @@ pub fn runtime() -> Result<PathBuf> {
         );
     };
     eprintln!("downloading ONNX Runtime 1.28.2 (first run only)");
-    let archive = fetch(runtime.url, runtime.sha256)?;
+    let archive = fetch(RUNTIME_FILE, runtime.url, runtime.sha256)?;
     let lib = extract(&archive, runtime.inner)?
         .with_context(|| format!("{} wasn't in the ONNX Runtime archive", runtime.inner))?;
     write_atomically(&path, &lib)?;
@@ -237,10 +264,13 @@ fn extract(archive: &[u8], inner: &str) -> Result<Option<Vec<u8>>> {
     Ok(Some(lib))
 }
 
+// How many bytes between two reports to the watcher.
+const REPORT_EVERY: usize = 256 << 10;
+
 /// Downloads into memory and checks the hash before anything touches disk, so
 /// a changed or truncated file upstream fails loudly instead of quietly
 /// reading text differently.
-fn fetch(url: &str, sha256: &str) -> Result<Vec<u8>> {
+fn fetch(file: &'static str, url: &str, sha256: &str) -> Result<Vec<u8>> {
     // With no limits a stalled connection waits forever, and never gets to
     // try the next source. Generous ones: a 78 MB archive on a slow line.
     let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -249,15 +279,49 @@ fn fetch(url: &str, sha256: &str) -> Result<Vec<u8>> {
         .timeout_recv_body(Some(Duration::from_secs(600)))
         .build()
         .into();
-    let mut bytes = Vec::new();
-    agent
+    let response = agent
         .get(url)
         .call()
-        .with_context(|| format!("downloading {url}"))?
-        .into_body()
-        .into_reader()
-        .read_to_end(&mut bytes)
         .with_context(|| format!("downloading {url}"))?;
+    let total = response
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+    let mut body = response.into_body().into_reader();
+
+    // Read in pieces rather than in one go, only so there's something to
+    // report along the way.
+    let mut bytes = Vec::with_capacity(total.unwrap_or(0).min(256 << 20) as usize);
+    let mut piece = vec![0u8; 64 << 10];
+    let mut told = 0;
+    tell(Download {
+        file,
+        done: 0,
+        total,
+    });
+    loop {
+        let n = body
+            .read(&mut piece)
+            .with_context(|| format!("downloading {url}"))?;
+        if n == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&piece[..n]);
+        if bytes.len() - told >= REPORT_EVERY {
+            told = bytes.len();
+            tell(Download {
+                file,
+                done: told as u64,
+                total,
+            });
+        }
+    }
+    tell(Download {
+        file,
+        done: bytes.len() as u64,
+        total,
+    });
     let got = format!("{:x}", Sha256::digest(&bytes));
     if got != sha256 {
         bail!("{url} doesn't match its checksum, expected {sha256} got {got}");
