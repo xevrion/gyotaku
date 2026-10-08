@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import 'activity.dart';
 import 'ink.dart';
 import 'reader.dart';
 import 'settings_sheet.dart';
@@ -73,7 +74,7 @@ class _SearchPageState extends State<SearchPage> with WidgetsBindingObserver {
   // when it comes back, without anyone asking.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) widget.reader.run();
+    if (state == AppLifecycleState.resumed) widget.reader.run(quiet: true);
   }
 
   void _onReader() {
@@ -143,7 +144,6 @@ class _SearchPageState extends State<SearchPage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     final reader = widget.reader;
-    final reading = reader.state == ReaderState.reading;
     // With nothing indexed there is nothing to filter or count, and the
     // page below has the one thing to say.
     final bare = _answered && _count == 0 && !_narrowed;
@@ -215,36 +215,17 @@ class _SearchPageState extends State<SearchPage> with WidgetsBindingObserver {
                             style: TextStyle(fontSize: 13, color: p.muted),
                           ),
                           const Spacer(),
-                          if (reading)
+                          if (reader.state == ReaderState.done &&
+                              reader.trouble == null &&
+                              reader.failed == 0)
                             Text(
-                              'Reading ${reader.done} of ${reader.total}',
-                              style: TextStyle(fontSize: 13, color: p.muted),
+                              'Up to date',
+                              style: TextStyle(fontSize: 13, color: p.faint),
                             ),
                         ],
                       ),
               ),
-              if (reader.trouble != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-                  child: Text(
-                    "gyotaku's own readers could not be used, so the phone's "
-                    'read these instead: ${reader.trouble}',
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12.5, color: p.muted),
-                  ),
-                ),
-              SizedBox(
-                height: 2,
-                child: reading
-                    ? LinearProgressIndicator(
-                        value: reader.total == 0
-                            ? null
-                            : reader.done / reader.total,
-                        minHeight: 2,
-                      )
-                    : null,
-              ),
+              Activity(reader: reader),
               Expanded(child: _body(context)),
             ],
           ),
@@ -289,13 +270,15 @@ class _SearchPageState extends State<SearchPage> with WidgetsBindingObserver {
           onAction: PhotoManager.openSetting,
         ),
         ReaderState.noFolder => _Notice(
-          icon: Icons.image_not_supported_outlined,
-          title: 'No screenshots yet',
-          body: 'There is no screenshots album on this phone. Take a screenshot and it will appear here.',
-          action: 'Look again',
-          onAction: reader.run,
+          icon: Icons.folder_off_outlined,
+          title: 'No folder is turned on',
+          body: 'gyotaku reads the folders you choose. This phone has no screenshots folder yet, or every folder is off.',
+          action: 'Choose folders',
+          onAction: () => showSettings(context, reader),
         ),
-        ReaderState.checking || ReaderState.reading => const _Notice(
+        ReaderState.checking ||
+        ReaderState.preparing ||
+        ReaderState.reading => const _Notice(
           icon: Icons.hourglass_empty,
           title: 'Reading your screenshots',
           body: 'The newest come first. You can search as soon as they appear.',

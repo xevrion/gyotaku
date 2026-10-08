@@ -144,6 +144,23 @@ pub fn forget_all() -> Result<u32> {
     })
 }
 
+/// Forgets every screenshot whose path is not in `paths`: ones deleted from
+/// the phone, and ones in a folder that was turned off. Only the index
+/// changes; the files are never touched.
+pub fn keep_only(paths: Vec<String>) -> Result<u32> {
+    let keep: std::collections::HashSet<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+    with(|i| {
+        let mut gone = 0;
+        for p in i.paths()? {
+            if !keep.contains(&p) {
+                i.remove(&p)?;
+                gone += 1;
+            }
+        }
+        Ok(gone)
+    })
+}
+
 /// Every word of `query` has to appear in the screenshot; an empty query
 /// lists the newest. Filters (`in:`, `date:`) work as on the desktop.
 pub fn search(query: String, limit: u32) -> Result<Vec<Hit>> {
@@ -226,6 +243,13 @@ mod tests {
         // the folder filter reads the path
         assert_eq!(search("in:screenshots".into(), 10).unwrap().len(), 1);
         assert!(search("in:camera".into(), 10).unwrap().is_empty());
+
+        // a folder turned off takes its shots out, and leaves the rest
+        let other = "/storage/emulated/0/DCIM/Camera/two.jpg".to_string();
+        insert_shot(other.clone(), 1_700_000_100, 4000, 3000, vec![]).unwrap();
+        assert_eq!(keep_only(vec![path.clone()]).unwrap(), 1);
+        assert_eq!(shot_count().unwrap(), 1);
+        assert_eq!(keep_only(vec![path.clone(), other]).unwrap(), 0);
 
         assert!(remove_shot(path).unwrap());
         assert_eq!(shot_count().unwrap(), 0);

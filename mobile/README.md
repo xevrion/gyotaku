@@ -35,6 +35,9 @@ Verified on an Android 17 arm64 emulator, in the dark theme, with five real scre
 - The Today and Yesterday chips filter by date.
 - An open screenshot can be swiped to the next result, shown without the ink, shared, and its text copied whole or one line at a time.
 - The launcher shows the adaptive icon.
+- Folders can be turned on and off in settings. Turning the Download folder on read its one image, and turning it off took that image out of search.
+- Turning a script on shows each model downloading, with megabytes done and a bar, then the reading count.
+- A release build reads with the phone's reader. It did not until ML Kit was kept from being shrunk, see `android/app/proguard-rules.pro`.
 - With **Read Bengali** turned on in a freshly reset release build, the app downloaded the models itself, read the eight screenshots again with `crates/ocr`, and the Bangla lines of a Bengali Wikipedia screenshot came back as text.
 
 Not done or not verified:

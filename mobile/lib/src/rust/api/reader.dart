@@ -8,7 +8,8 @@ import 'index.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `eq`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `loaded`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`
 
 /// Tells the core where it lives on this phone. `gyotaku-core` finds its
 /// folders the way a Linux program does, from HOME and the XDG variables, and
@@ -18,6 +19,16 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// Call once, before anything else, while nothing else is running.
 void settle({required String home, String? runtime}) =>
     RustLib.instance.api.crateApiReaderSettle(home: home, runtime: runtime);
+
+/// The model being downloaded right now, or None. Cheap enough to ask a few
+/// times a second.
+DownloadProgress? downloadProgress() =>
+    RustLib.instance.api.crateApiReaderDownloadProgress();
+
+/// Gets the readers ready: downloads the models that aren't there yet and
+/// loads them. Until this or the first `read_image` returns,
+/// `download_progress` says how far along it is.
+Future<void> loadReaders() => RustLib.instance.api.crateApiReaderLoadReaders();
 
 /// Every script this version knows, and whether it is on.
 Future<List<ScriptChoice>> scripts() =>
@@ -33,6 +44,34 @@ Future<void> setScript({required String name, required bool enabled}) =>
 /// touches the network.
 Future<List<Line>> readImage({required String path}) =>
     RustLib.instance.api.crateApiReaderReadImage(path: path);
+
+/// How far along the download of one model is.
+class DownloadProgress {
+  /// The file's name, like `bengali_easyocr_rec.onnx`.
+  final String file;
+  final int doneKb;
+
+  /// 0 when the server didn't say.
+  final int totalKb;
+
+  const DownloadProgress({
+    required this.file,
+    required this.doneKb,
+    required this.totalKb,
+  });
+
+  @override
+  int get hashCode => file.hashCode ^ doneKb.hashCode ^ totalKb.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DownloadProgress &&
+          runtimeType == other.runtimeType &&
+          file == other.file &&
+          doneKb == other.doneKb &&
+          totalKb == other.totalKb;
+}
 
 /// A writing system that can be turned on, see `gyotaku_core::Script`.
 class ScriptChoice {

@@ -15,6 +15,19 @@ use super::index::Line;
 // turned off gives its memory back.
 static OCR: Mutex<Option<Ocr>> = Mutex::new(None);
 
+// The download under way, if there is one, for the app to draw.
+static DOWNLOAD: Mutex<Option<DownloadProgress>> = Mutex::new(None);
+
+/// How far along the download of one model is.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DownloadProgress {
+    /// The file's name, like `bengali_easyocr_rec.onnx`.
+    pub file: String,
+    pub done_kb: u32,
+    /// 0 when the server didn't say.
+    pub total_kb: u32,
+}
+
 /// Tells the core where it lives on this phone. `gyotaku-core` finds its
 /// folders the way a Linux program does, from HOME and the XDG variables, and
 /// an app has neither until it sets them. `runtime` is the ONNX Runtime
@@ -34,6 +47,38 @@ pub fn settle(home: String, runtime: Option<String>) {
             std::env::set_var("ORT_DYLIB_PATH", runtime);
         }
     }
+    gyotaku_ocr::watch_downloads(|d| {
+        *DOWNLOAD.lock().unwrap_or_else(|e| e.into_inner()) = Some(DownloadProgress {
+            file: d.file.to_owned(),
+            done_kb: (d.done / 1024) as u32,
+            total_kb: (d.total.unwrap_or(0) / 1024) as u32,
+        });
+    });
+}
+
+/// The model being downloaded right now, or None. Cheap enough to ask a few
+/// times a second.
+#[frb(sync)]
+pub fn download_progress() -> Option<DownloadProgress> {
+    DOWNLOAD.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+fn loaded(guard: &mut Option<Ocr>) -> Result<&mut Ocr> {
+    if guard.is_none() {
+        let scripts = Config::load_or_default().scripts();
+        let ocr = Ocr::new(gyotaku_core::default_threads(), &scripts);
+        *DOWNLOAD.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *guard = Some(ocr?);
+    }
+    Ok(guard.as_mut().expect("loaded just above"))
+}
+
+/// Gets the readers ready: downloads the models that aren't there yet and
+/// loads them. Until this or the first `read_image` returns,
+/// `download_progress` says how far along it is.
+pub fn load_readers() -> Result<()> {
+    let mut guard = OCR.lock().unwrap_or_else(|e| e.into_inner());
+    loaded(&mut guard).map(|_| ())
 }
 
 /// A writing system that can be turned on, see `gyotaku_core::Script`.
@@ -72,11 +117,7 @@ pub fn set_script(name: String, enabled: bool) -> Result<()> {
 /// touches the network.
 pub fn read_image(path: String) -> Result<Vec<Line>> {
     let mut guard = OCR.lock().unwrap_or_else(|e| e.into_inner());
-    if guard.is_none() {
-        let scripts = Config::load_or_default().scripts();
-        *guard = Some(Ocr::new(gyotaku_core::default_threads(), &scripts)?);
-    }
+    let ocr = loaded(&mut guard)?;
     let img = gyotaku_ocr::load_image(std::path::Path::new(&path))?;
-    let lines = guard.as_mut().expect("loaded just above").read(&img)?;
-    Ok(lines.into_iter().map(Into::into).collect())
+    Ok(ocr.read(&img)?.into_iter().map(Into::into).collect())
 }

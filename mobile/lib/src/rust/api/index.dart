@@ -48,6 +48,12 @@ Future<bool> removeShot({required String path}) =>
 /// emptied; the files are never touched.
 Future<int> forgetAll() => RustLib.instance.api.crateApiIndexForgetAll();
 
+/// Forgets every screenshot whose path is not in `paths`: ones deleted from
+/// the phone, and ones in a folder that was turned off. Only the index
+/// changes; the files are never touched.
+Future<int> keepOnly({required List<String> paths}) =>
+    RustLib.instance.api.crateApiIndexKeepOnly(paths: paths);
+
 /// Every word of `query` has to appear in the screenshot; an empty query
 /// lists the newest. Filters (`in:`, `date:`) work as on the desktop.
 Future<List<Hit>> search({required String query, required int limit}) =>
