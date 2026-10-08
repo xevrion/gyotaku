@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#141416</color>
+    <!-- The app's own background, so the window is never a white flash before the first frame. -->
+    <color name="panel">#F6F6F4</color>
+</resources>

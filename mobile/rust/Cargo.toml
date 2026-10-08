@@ -1,0 +1,23 @@
+[package]
+name = "rust_lib_gyotaku"
+description = "The gyotaku index, as the Flutter app calls it"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+publish = false
+
+# Its own workspace, so the desktop workspace at the repository root never
+# builds flutter_rust_bridge and this builds without gpui.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+gyotaku-core = { path = "../../crates/core" }
+gyotaku-ocr = { path = "../../crates/ocr" }
+anyhow = "1.0"
+flutter_rust_bridge = "=2.13.0"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
