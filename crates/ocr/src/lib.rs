@@ -13,7 +13,7 @@ use gyotaku_core::{Line, Rect, Script};
 use image::RgbImage;
 use ort::session::{Session, builder::GraphOptimizationLevel};
 
-pub use models::models_dir;
+pub use models::{Download, models_dir, watch_downloads};
 
 // Lines the recognizer isn't at least this sure about are mostly icons read as
 // letters. Paddle's default.
