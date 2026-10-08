@@ -69,15 +69,18 @@ impl Default for Config {
 pub enum Script {
     /// Hindi, Marathi, Nepali, Sanskrit and the rest written in it.
     Devanagari,
+    /// Bangla, Assamese and the rest written in it.
+    Bengali,
 }
 
 impl Script {
-    pub const ALL: [Script; 1] = [Script::Devanagari];
+    pub const ALL: [Script; 2] = [Script::Devanagari, Script::Bengali];
 
     /// The name used in the config.
     pub fn name(self) -> &'static str {
         match self {
             Script::Devanagari => "devanagari",
+            Script::Bengali => "bengali",
         }
     }
 

@@ -112,12 +112,14 @@ impl Ocr {
 fn model_for(script: Script) -> &'static models::Model {
     match script {
         Script::Devanagari => &models::DEVANAGARI,
+        Script::Bengali => &models::BENGALI,
     }
 }
 
 fn in_script(script: Script, c: char) -> bool {
     match script {
         Script::Devanagari => ('\u{0900}'..='\u{097F}').contains(&c),
+        Script::Bengali => ('\u{0980}'..='\u{09FF}').contains(&c),
     }
 }
 
@@ -234,6 +236,7 @@ mod tests {
     }
 
     const HINDI: Script = Script::Devanagari;
+    const BANGLA: Script = Script::Bengali;
 
     // The readings below are what the two models gave on real test images.
     #[test]
@@ -271,5 +274,18 @@ mod tests {
         // A stray Devanagari letter, but less sure: the rupee sign stays.
         let old = read("₹1,250.00", 0.943, 5);
         assert!(!better(HINDI, &read("ऱ 1,250.00", 0.888, 5), &old));
+    }
+
+    // What the two readers gave for one line of a screenshot of Bengali
+    // Wikipedia. The scores are theirs; the gaps weren't noted and don't
+    // matter here, the first read is unsure enough on its own.
+    #[test]
+    fn bangla_replaces_what_the_default_reader_made_of_it() {
+        let old = read("GERNAGTGGARANA", 0.51, 0);
+        assert!(second_read(BANGLA, &old));
+        let new = read("অংশগ্রহণ করুন ও জিতে নিন আকর্ষণীয় পুরস্কার|", 0.98, 0);
+        assert!(better(BANGLA, &new, &old));
+        // Each script only answers for its own letters.
+        assert!(!better(HINDI, &new, &old));
     }
 }

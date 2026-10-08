@@ -123,6 +123,7 @@ Open settings with Ctrl+,.
 | Background indexing | Enables or disables the background indexer. See [Background indexing](#background-indexing). |
 | Save copied images | Off by default. Saves every image copied to the clipboard into its own folder, so images that were never saved anywhere become searchable. See [Copied images](#copied-images). |
 | Read Devanagari | Off by default. Also reads Hindi, Marathi, Nepali and other text in Devanagari. See [Other scripts](#other-scripts). |
+| Read Bengali | Off by default. Also reads Bangla, Assamese and other text in the Bengali script. See [Other scripts](#other-scripts). |
 | Cores per screenshot | Number of CPU cores used to read a single screenshot. Higher values are faster; lower values leave more capacity for other work. Indexing always runs at idle priority. |
 | Thumbnail cache | Clears cached thumbnails. They are regenerated on demand. |
 | Shortcuts | Lists every keyboard shortcut. Select a command and press Enter, then press the new keys; Escape cancels and Delete restores the default. New keys must include Ctrl, Alt or Super (or be a function key) and must not already be in use. Navigation keys (Escape, Enter, arrows, Page Up and Page Down, Shift+arrows) are fixed. |
@@ -197,6 +198,8 @@ It applies to screenshots read from then on. Screenshots read before keep the te
 Lines that the default reader already read with confidence, and that contain no Devanagari, are never read twice, so the extra cost depends on the screenshot. On 25 screenshots with no Devanagari in them, about a quarter of lines were read a second time. See [Performance](performance.md#other-scripts).
 
 To check a single image: `gyotaku ocr --script devanagari path/to/screenshot.png`.
+
+**Read Bengali** works the same way for Bangla, Assamese and other text in the Bengali script, with `scripts = ["bengali"]` in `config.toml` and `--script bengali` on the command line. Its model is a 54 MB download and is much slower than the others: a screenshot full of Bangla took 5.3 to 5.8 s to read instead of 0.76 s, and one with no Bangla in it 1.5 s instead of 0.6 s. See [Performance](performance.md#other-scripts).
 
 ## Command-line interface
 

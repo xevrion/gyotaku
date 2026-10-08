@@ -76,6 +76,15 @@ Under load the difference disappears into the noise. The extra recognizer is a t
 
 Accuracy on rendered Hindi and Marathi screenshots (chat, payment receipt, settings page, municipal notice, an order page mixing Hindi and English), Noto Sans and Noto Serif Devanagari at 15 to 18 pt: every line was read, at scores of 0.91 to 0.99, where the default reader returned nothing or stray Latin letters. Misreads were in conjuncts and nasal marks, for example "पुणे" read as "पुण" and "रास्ते" as "रासत".
 
+Reading Bengali as well (**Read Bengali** in settings) costs far more, because its recognizer is a larger and older design than the others. On an Apple M5 with 4 cores, a development build, three runs each:
+
+| Screenshot (1080 x 2400) | Default | With Bengali |
+|---|---|---|
+| Bengali Wikipedia article, 33 lines kept | 0.76 s | 5.3 to 5.8 s |
+| Android settings page in English, 28 lines kept | 0.59 to 0.60 s | 1.5 s |
+
+On the Wikipedia screenshot the default reader returned stray Latin letters for every Bangla line ("GERNAGTGGARANA" at 0.51); the Bengali reader returned the 24 whole lines as text at scores of 0.93 to 1.00 and two fragments (part of a logo, a line cut off by the screen edge) at 0.80 and 0.81, with misreads in punctuation and the odd letter ("টারশিয়ারি" read as "টারশিযারি", "।" as "|"). On the English screenshot it changed no line and added one stray one ("88ঃ", from an icon). These are two screenshots, not a test set.
+
 Vertical text costs nothing extra unless a screenshot has some: only boxes at least 1.5 times taller than wide are turned, and on 100 real screenshots the text read was identical with and without it.
 
 ## Search

@@ -130,8 +130,10 @@ fn read_lines(
         for (n, &i) in batch.iter().enumerate() {
             let slice = &probs[n * steps * classes..(n + 1) * steps * classes];
             // Only the steps over the line itself, not the padding after it.
-            let used = (line_width(&regions[i], width) as usize)
-                .div_ceil(width as usize / steps.max(1))
+            // Not every model steps a whole number of pixels: paddle's take
+            // 8, the Bengali one a little under 3.
+            let used = (line_width(&regions[i], width) as usize * steps)
+                .div_ceil(width as usize)
                 .min(steps);
             results[i] = ctc_decode(&slice[..used * classes], classes, alphabet);
         }

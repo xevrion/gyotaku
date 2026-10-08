@@ -65,6 +65,23 @@ pub const DEVANAGARI: Model = Model {
     sha256: "d6f0a906580e3fa6b324a318718f1f31f268b6ea8ef985f91c2012a37f52c91e",
 };
 
+// Paddle has no Bengali recognizer in any version, so this is EasyOCR's
+// (JaidedAI, Apache-2.0): a ResNet and two LSTMs rather than paddle's SVTR,
+// which is why it is 54 MB even with its weights quantized to 8 bits (215 MB
+// before), and several times slower per line. contrib/export-bengali-model.py
+// builds it: the greyscale and the scaling to its own 64 px height are folded
+// into the graph and its alphabet is in the metadata, so it takes the same
+// input as the paddle ones and rec.rs reads it without knowing the
+// difference. Its alphabet is the Bengali block plus digits, Latin letters
+// and punctuation.
+pub const BENGALI: Model = Model {
+    file: "bengali_easyocr_rec.onnx",
+    urls: &[
+        "https://github.com/zamansheikh/gyotaku/releases/download/models-bengali-v1/bengali_easyocr_rec.onnx",
+    ],
+    sha256: "1a096ddeac2f1261a7f28c760ad427c30017e013e5d6e0e7f11def0efc2f3c58",
+};
+
 /// ONNX Runtime itself: Microsoft's official build, fetched on first use like
 /// the models. The Linux one is built against glibc 2.27 and GCC 5's
 /// libstdc++, so it loads on anything from Ubuntu 18.04 and Debian 10 on. The
