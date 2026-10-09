@@ -69,17 +69,20 @@ pub const DEVANAGARI: Model = Model {
 // (JaidedAI, Apache-2.0): a ResNet and two LSTMs rather than paddle's SVTR,
 // which is why it is 54 MB even with its weights quantized to 8 bits (215 MB
 // before), and several times slower per line. contrib/export-bengali-model.py
-// builds it: the greyscale and the scaling to its own 64 px height are folded
-// into the graph and its alphabet is in the metadata, so it takes the same
-// input as the paddle ones and rec.rs reads it without knowing the
-// difference. Its alphabet is the Bengali block plus digits, Latin letters
-// and punctuation.
+// builds it: the greyscale conversion is folded into the graph and its
+// alphabet is in the metadata, so it takes the same input as the paddle ones
+// and rec.rs reads it without knowing the difference. Its alphabet is the
+// Bengali block plus digits, Latin letters and punctuation.
+//
+// v2 takes lines at the 48 px they come in. v1 scaled them up to the 64 px
+// the model was trained on first, which took a third longer and read no
+// better. A new name, so a copy of v1 already downloaded isn't taken for it.
 pub const BENGALI: Model = Model {
-    file: "bengali_easyocr_rec.onnx",
+    file: "bengali_easyocr_rec_v2.onnx",
     urls: &[
-        "https://github.com/zamansheikh/gyotaku/releases/download/models-bengali-v1/bengali_easyocr_rec.onnx",
+        "https://github.com/zamansheikh/gyotaku/releases/download/models-bengali-v2/bengali_easyocr_rec_v2.onnx",
     ],
-    sha256: "1a096ddeac2f1261a7f28c760ad427c30017e013e5d6e0e7f11def0efc2f3c58",
+    sha256: "b5e0eab6226c0b55e53266108e6a9a9df945efce4a378efdab63130cf101ab42",
 };
 
 /// ONNX Runtime itself: Microsoft's official build, fetched on first use like

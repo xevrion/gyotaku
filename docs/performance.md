@@ -80,10 +80,13 @@ Reading Bengali as well (**Read Bengali** in settings) costs far more, because i
 
 | Screenshot (1080 x 2400) | Default | With Bengali |
 |---|---|---|
-| Bengali Wikipedia article, 33 lines kept | 0.76 s | 5.3 to 5.8 s |
-| Android settings page in English, 28 lines kept | 0.59 to 0.60 s | 1.5 s |
+| Bengali Wikipedia article, 33 lines kept | 0.73 to 0.75 s | 3.1 to 3.3 s |
+| Android home screen with a Bangla widget, 38 lines kept | | 2.3 s |
+| Android settings page in English, 28 lines kept | 0.57 to 0.61 s | 0.90 to 0.93 s |
 
-On the Wikipedia screenshot the default reader returned stray Latin letters for every Bangla line ("GERNAGTGGARANA" at 0.51); the Bengali reader returned the 24 whole lines as text at scores of 0.93 to 1.00 and two fragments (part of a logo, a line cut off by the screen edge) at 0.80 and 0.81, with misreads in punctuation and the odd letter ("টারশিয়ারি" read as "টারশিযারি", "।" as "|"). On the English screenshot it changed no line and added one stray one ("88ঃ", from an icon). These are two screenshots, not a test set.
+On the Wikipedia screenshot the default reader returned stray Latin letters for every Bangla line ("GERNAGTGGARANA" at 0.51); the Bengali reader returned the whole lines as text at scores of 0.90 to 1.00 and two fragments (part of a logo, a line cut off by the screen edge) at 0.79 and 0.82, with misreads mostly in punctuation ("।" as "|"). On the English screenshot it changed no line and added two stray ones ("oull @ি" and "8ঃ", from icons). These are three screenshots, not a test set.
+
+The first version of this model took 5.3 to 5.8 s on the Wikipedia screenshot. It scaled each line up to the 64 px the model was trained on; the current one gives it lines at 48 px as they come, and short lines at their own width instead of padded to 320 px. Of 163 words on that screenshot 158 read the same either way, and the rest were no worse.
 
 Vertical text costs nothing extra unless a screenshot has some: only boxes at least 1.5 times taller than wide are turned, and on 100 real screenshots the text read was identical with and without it.
 
