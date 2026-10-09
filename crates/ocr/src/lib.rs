@@ -119,28 +119,34 @@ impl Ocr {
 
         // Only the lines the default reader stumbled on get a second read,
         // which keeps it to about a fifth more time on a typical screenshot
-        // instead of nearly double.
+        // instead of nearly double. Each extra reader is asked on its own,
+        // about the default reader's lines and not about what another extra
+        // reader made of them, so the order they are listed in can't matter.
+        let mut seconds = Vec::with_capacity(self.extra.len());
         for extra in &mut self.extra {
             let unsure: Vec<usize> = (0..regions.len())
                 .filter(|&i| second_read(extra.script, &texts[i]))
                 .collect();
-            if unsure.is_empty() {
-                continue;
-            }
-            let picked: Vec<det::Region> = unsure.iter().map(|&i| regions[i]).collect();
-            let again = rec::recognize(
-                &mut extra.session,
-                &extra.alphabet,
-                img,
-                &picked,
-                extra.min_width,
-            )?;
-            for (&i, read) in unsure.iter().zip(again) {
-                if better(extra.script, &read, &texts[i]) {
-                    texts[i] = read;
+            let mut reads: Vec<Option<rec::Read>> = vec![None; regions.len()];
+            if !unsure.is_empty() {
+                let picked: Vec<det::Region> = unsure.iter().map(|&i| regions[i]).collect();
+                let again = rec::recognize(
+                    &mut extra.session,
+                    &extra.alphabet,
+                    img,
+                    &picked,
+                    extra.min_width,
+                )?;
+                for (&i, read) in unsure.iter().zip(again) {
+                    reads[i] = Some(read);
                 }
             }
+            seconds.push(Second {
+                script: extra.script,
+                reads,
+            });
         }
+        settle(&mut texts, &seconds);
 
         let (w, h) = (img.width() as f32, img.height() as f32);
         Ok(regions
@@ -159,6 +165,68 @@ impl Ocr {
             })
             .collect())
     }
+}
+
+/// What one extra reader made of the lines it was asked about, by line.
+struct Second {
+    script: Script,
+    reads: Vec<Option<rec::Read>>,
+}
+
+/// Puts the extra readers' reads in place of the default reader's, where
+/// they are better.
+///
+/// With more than one extra reader the score of a line can't settle which
+/// to believe. A recognizer shown a script it doesn't know answers anyway,
+/// and one of them does it with confidence: the Bengali reader gave Hindi
+/// lines about 0.95, and beat the right Devanagari read on a quarter of the
+/// lines of a Hindi page. So the screenshot is put to a vote first. Each
+/// line goes to the reader surest of it, the reader with the most lines is
+/// taken to be the script the screenshot is in, and it has the first say on
+/// every line. The others get the lines it could make nothing of, which is
+/// what keeps a line of Bangla on a Hindi page.
+fn settle(texts: &mut [rec::Read], seconds: &[Second]) {
+    let mut lines_won = vec![0usize; seconds.len()];
+    for (i, old) in texts.iter().enumerate() {
+        let surest = (0..seconds.len())
+            .filter_map(|n| take(&seconds[n], i, old).map(|read| (n, read.score)))
+            .max_by(|a, b| {
+                a.1.total_cmp(&b.1)
+                    .then(place(seconds[b.0].script).cmp(&place(seconds[a.0].script)))
+            });
+        if let Some((n, _)) = surest {
+            lines_won[n] += 1;
+        }
+    }
+    // Most lines first; a tie goes by the script's place in `Script::ALL`,
+    // never by the order in the config.
+    let mut say: Vec<usize> = (0..seconds.len()).collect();
+    say.sort_by_key(|&n| (std::cmp::Reverse(lines_won[n]), place(seconds[n].script)));
+
+    let chosen: Vec<Option<rec::Read>> = texts
+        .iter()
+        .enumerate()
+        .map(|(i, old)| say.iter().find_map(|&n| take(&seconds[n], i, old)).cloned())
+        .collect();
+    for (text, new) in texts.iter_mut().zip(chosen) {
+        if let Some(new) = new {
+            *text = new;
+        }
+    }
+}
+
+/// A reader's go at one line, if it is fit to replace `old`.
+fn take<'a>(second: &'a Second, line: usize, old: &rec::Read) -> Option<&'a rec::Read> {
+    second.reads[line]
+        .as_ref()
+        .filter(|new| better(second.script, new, old))
+}
+
+fn place(script: Script) -> usize {
+    Script::ALL
+        .iter()
+        .position(|&s| s == script)
+        .unwrap_or(usize::MAX)
 }
 
 // What `read_rest` won't bother with: on a phone each line handed to the
@@ -419,6 +487,65 @@ mod tests {
         assert!(better(HINDI, &read("कल सुबह 9 बजे बैठक", 0.99, 0), &old));
         // The Bengali reader still takes the same line.
         assert!(better(BANGLA, &read("আজকের বাজারের তালিকা", 0.97, 0), &old));
+    }
+
+    fn second(script: Script, reads: &[(&str, f32)]) -> Second {
+        Second {
+            script,
+            reads: reads.iter().map(|&(t, s)| Some(read(t, s, 0))).collect(),
+        }
+    }
+
+    // A Hindi page with both extra readers on. The Bengali reader is surer
+    // of the second line than the Devanagari one, and wrong; the page as a
+    // whole is still Hindi, and both orders in the config say so.
+    #[test]
+    fn the_script_of_the_page_decides_a_line_the_scores_get_wrong() {
+        let first = vec![
+            read("yut HETA", 0.6, 0),
+            read("TRUTOT", 0.6, 0),
+            read("RAT", 0.6, 0),
+        ];
+        let hindi = [
+            ("भारत गणराज्य", 0.98),
+            ("दक्षिण एशिया", 0.93),
+            ("नई दिल्ली", 0.97),
+        ];
+        let junk = [
+            ("ভাবত গণবাজ্য", 0.90),
+            ("দক্সিণ এশিযা", 0.96),
+            ("নঈ দিল্লী", 0.88),
+        ];
+        for order in [[HINDI, BANGLA], [BANGLA, HINDI]] {
+            let seconds: Vec<Second> = order
+                .iter()
+                .map(|&s| second(s, if s == HINDI { &hindi } else { &junk }))
+                .collect();
+            let mut texts = first.clone();
+            settle(&mut texts, &seconds);
+            let got: Vec<&str> = texts.iter().map(|r| r.text.as_str()).collect();
+            assert_eq!(got, ["भारत गणराज्य", "दक्षिण एशिया", "नई दिल्ली"]);
+        }
+    }
+
+    // The reader that lost the vote still gets a line the winner couldn't
+    // read: one line of Bangla on a Hindi page.
+    #[test]
+    fn the_other_reader_keeps_what_the_winner_could_not_read() {
+        let mut texts = vec![read("a", 0.6, 0), read("b", 0.6, 0), read("c", 0.6, 0)];
+        let seconds = [
+            second(
+                HINDI,
+                &[("भारत गणराज्य", 0.98), ("नई दिल्ली", 0.97), ("वाशलाफम", 0.73)],
+            ),
+            second(
+                BANGLA,
+                &[("ভাবত গণবাজ্য", 0.90), ("নঈ দিল্লী", 0.88), ("বাংলাদেশ", 0.99)],
+            ),
+        ];
+        settle(&mut texts, &seconds);
+        let got: Vec<&str> = texts.iter().map(|r| r.text.as_str()).collect();
+        assert_eq!(got, ["भारत गणराज्य", "नई दिल्ली", "বাংলাদেশ"]);
     }
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
