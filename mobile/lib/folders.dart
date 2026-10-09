@@ -54,10 +54,37 @@ class FolderChoices {
   }
 }
 
+/// What gyotaku asks the phone for, the same everywhere it asks or checks:
+/// images, and nothing else.
+///
+/// The plugin's own default is images and videos. Android 13 has a
+/// permission for each, the app only declares the one for images, and a
+/// request that includes one it doesn't declare is refused outright: on
+/// Android 13 the app could never see a single screenshot.
+const photoAccess = PermissionRequestOption(
+  androidPermission: AndroidPermission(
+    type: RequestType.image,
+    mediaLocation: false,
+  ),
+);
+
 /// Every album of images on the phone, without the "all photos" one that
 /// would repeat the rest.
 Future<List<AssetPathEntity>> imageFolders() async {
-  final all = await PhotoManager.getAssetPathList(type: RequestType.image);
+  final all = await PhotoManager.getAssetPathList(
+    type: RequestType.image,
+    // An order has to be named. With none the plugin still asks for a page
+    // at a time, and on Android 10 that comes out as "ORDER BY LIMIT", which
+    // the system refuses: every listing failed there.
+    filterOption: FilterOptionGroup(
+      // Any size: the library doesn't always know one (an image copied
+      // onto the phone, say), and leaving those out hid whole folders.
+      imageOption: const FilterOption(
+        sizeConstraint: SizeConstraint(ignoreSize: true),
+      ),
+      orders: const [OrderOption(type: OrderOptionType.createDate)],
+    ),
+  );
   return [
     for (final f in all)
       if (!f.isAll) f,

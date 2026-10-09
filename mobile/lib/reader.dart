@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter/widgets.dart';
@@ -119,8 +120,6 @@ class Reader extends ChangeNotifier {
   bool _running = false;
   bool _again = false;
 
-  static const _option = PermissionRequestOption();
-
   bool get busy =>
       state == ReaderState.checking ||
       state == ReaderState.preparing ||
@@ -192,7 +191,7 @@ class Reader extends ChangeNotifier {
       if (held) paused = true;
     }));
     var permission = await PhotoManager.getPermissionState(
-      requestOption: _option,
+      requestOption: photoAccess,
     );
     if (!permission.hasAccess) {
       if (!ask) {
@@ -203,8 +202,14 @@ class Reader extends ChangeNotifier {
         );
         return;
       }
-      permission = await PhotoManager.requestPermissionExtend(
-        requestOption: _option,
+      await PhotoManager.requestPermissionExtend(requestOption: photoAccess);
+      // Asked again rather than trusting what the request came back with.
+      // On Android 9 and earlier the plugin asks for leave to write as well,
+      // which this app never declares or wants; that half is refused, and
+      // the plugin reports the whole request as refused even though reading
+      // was just allowed.
+      permission = await PhotoManager.getPermissionState(
+        requestOption: photoAccess,
       );
       if (!permission.hasAccess) {
         _set(ReaderState.refused);
@@ -712,14 +717,23 @@ class _Image {
 
   static Future<_Image?> of(AssetEntity asset) async {
     try {
-      if (asset.width <= 0 || asset.height <= 0) return null;
       final file = await asset.originFile;
       if (file == null) return null;
+      var (width, height) = (asset.width, asset.height);
+      if (width <= 0 || height <= 0) {
+        // The library has no size for it. The file's own header does.
+        final buffer = await ui.ImmutableBuffer.fromFilePath(file.path);
+        final header = await ui.ImageDescriptor.encoded(buffer);
+        (width, height) = (header.width, header.height);
+        header.dispose();
+        buffer.dispose();
+        if (width <= 0 || height <= 0) return null;
+      }
       return _Image(
         file.path,
         asset.modifiedDateSecond ?? asset.createDateSecond ?? 0,
-        asset.width,
-        asset.height,
+        width,
+        height,
       );
     } catch (e) {
       debugPrint('gyotaku: could not look at ${asset.title}: $e');

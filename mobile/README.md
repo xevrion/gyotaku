@@ -54,6 +54,25 @@ Not done or not verified:
 - A real device, a large library, and any measurement of speed or memory.
 - Grouping of near-identical screenshots, moving to the trash, settings, and scripts other than Latin.
 
+## Android versions
+
+The first run (the app's own explanation, the system's prompt, Allow, then a first read) was gone through on emulators of each of these, with a release build:
+
+| Android | What lets the app see images |
+|---|---|
+| 9 (API 28) | `READ_EXTERNAL_STORAGE` |
+| 10 (API 29) | `READ_EXTERNAL_STORAGE`, with `requestLegacyExternalStorage` so files are read in place |
+| 13 (API 33) | `READ_MEDIA_IMAGES` |
+| 17 (API 37) | `READ_MEDIA_IMAGES`, or `READ_MEDIA_VISUAL_USER_SELECTED` for a chosen few |
+
+Not run: 7 and 8 (API 24 to 27), 11 and 12, 14 to 16, and "Allow limited access" on 14 and later.
+
+Three things each broke one of those and are easy to undo by accident:
+
+- The app asks for images only (`photoAccess` in `lib/folders.dart`). The plugin's default also asks for videos, which Android 13 refuses outright when the manifest does not declare it.
+- Listing a folder names a sort order. Without one the plugin's query is invalid on Android 10.
+- After asking, the permission is checked again rather than trusting the answer. On Android 9 and earlier the plugin also asks to write, which is refused, and it then reports the whole request as refused.
+
 ## Measured
 
 Pixel 6, Android 17, release build, the phone in use at the time:

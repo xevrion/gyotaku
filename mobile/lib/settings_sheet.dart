@@ -65,7 +65,7 @@ class _SettingsState extends State<_Settings> {
     var said = 'Choose which folders are read';
     try {
       final state = await PhotoManager.getPermissionState(
-        requestOption: const PermissionRequestOption(),
+        requestOption: photoAccess,
       );
       if (state.hasAccess) {
         final choices = await FolderChoices.load();

@@ -8,11 +8,25 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- Read only: gyotaku never writes to, moves or deletes a photo. -->
+    <!-- Read only: gyotaku never writes to, moves or deletes a photo.
+         Which permission lets an app see images depends on the Android
+         version, so there is one for each:
+           14 and later  READ_MEDIA_IMAGES, or READ_MEDIA_VISUAL_USER_SELECTED
+                         when the person picks only some photos
+           13            READ_MEDIA_IMAGES
+           12 and earlier READ_EXTERNAL_STORAGE
+         Images only. The one for videos is deliberately not here, and the
+         app asks for images only to match (see photoAccess in folders.dart). -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- requestLegacyExternalStorage is for Android 10 alone. The readers
+         open a screenshot by its path, which that one version forbids
+         unless asked this way; without it every image is first copied into
+         the app's cache. Later versions allow reading media by path and
+         ignore the attribute. -->
     <application
+        android:requestLegacyExternalStorage="true"
         android:label="gyotaku"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

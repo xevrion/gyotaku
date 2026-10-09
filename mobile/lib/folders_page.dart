@@ -39,7 +39,7 @@ class _FoldersPageState extends State<FoldersPage> {
   Future<void> _load() async {
     try {
       final state = await PhotoManager.getPermissionState(
-        requestOption: const PermissionRequestOption(),
+        requestOption: photoAccess,
       );
       if (!state.hasAccess) {
         if (mounted) setState(() => _folders = const []);
