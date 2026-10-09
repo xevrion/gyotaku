@@ -26,7 +26,9 @@ class Palette {
   final Color shu;
 
   /// What a screenshot is covered with while searching, so only the matching
-  /// lines stay lit.
+  /// lines stay lit. The desktop's own veil (`veil` in its theme): dark
+  /// enough to set a match apart, light enough that the screenshot can
+  /// still be told from the one beside it.
   final Color ink;
 
   static const light = Palette(
@@ -37,7 +39,7 @@ class Palette {
     muted: Color(0xff6d6c68),
     faint: Color(0xffa9a7a1),
     shu: Color(0xffe0531f),
-    ink: Color(0xc718181a),
+    ink: Color(0x7018181a),
   );
 
   static const dark = Palette(
@@ -48,7 +50,7 @@ class Palette {
     muted: Color(0xff9b9a95),
     faint: Color(0xff5f5e5a),
     shu: Color(0xffff7438),
-    ink: Color(0xd10a0a0b),
+    ink: Color(0x80000000),
   );
 
   static Palette of(BuildContext context) =>

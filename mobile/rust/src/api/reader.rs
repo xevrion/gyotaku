@@ -2,7 +2,7 @@
 //! for the scripts the phone's built in text recognition can't read. With no
 //! extra script turned on, nothing here is used and no model is downloaded.
 
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use anyhow::{Context, Result};
@@ -69,6 +69,9 @@ pub fn download_progress() -> Option<DownloadProgress> {
 // once it is put away, where Android already holds a background app back
 // and stepping aside twice over made a slow read three times slower.
 static NICE: AtomicI32 = AtomicI32::new(10);
+
+// Set when the scripts change: the readers loaded are for the old ones.
+static STALE: AtomicBool = AtomicBool::new(false);
 
 // ONNX Runtime's own worker threads, noted when the readers were loaded.
 static WORKERS: Mutex<Vec<i32>> = Mutex::new(Vec::new());
@@ -199,6 +202,9 @@ impl Drop for Polite {
 }
 
 fn loaded(guard: &mut Option<Ocr>) -> Result<&mut Ocr> {
+    if STALE.swap(false, Ordering::Relaxed) {
+        *guard = None;
+    }
     if guard.is_none() {
         let scripts = Config::load_or_default().scripts();
         // The first version of the Bengali model, 54 MB that nothing reads
@@ -261,7 +267,10 @@ pub fn set_script(name: String, enabled: bool) -> Result<()> {
     let mut config = Config::load_or_default();
     config.set_script(script, enabled);
     config.save().context("saving the settings")?;
-    *OCR.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    // Not dropped here: the readers may be mid download, which holds them
+    // for minutes, and a switch in settings must not wait for that. The
+    // next use sees they are out of date and loads the right ones.
+    STALE.store(true, Ordering::Relaxed);
     Ok(())
 }
 

@@ -55,9 +55,17 @@ class Activity extends StatelessWidget {
         final trouble = reader.trouble;
         final failed = reader.failed;
         final reading = reader.state == ReaderState.reading;
+        // The readers coming down while something else is the main stage.
+        final fetchingAside =
+            reader.fetching && reader.state != ReaderState.preparing;
+        final next = reader.next;
         // On hold with nothing under way: say so, and how to carry on.
         final held = reader.paused && !reader.busy && reader.waiting > 0;
-        if (title == null && trouble == null && failed == 0 && !held) {
+        if (title == null &&
+            trouble == null &&
+            failed == 0 &&
+            !held &&
+            !fetchingAside) {
           return const SizedBox.shrink();
         }
 
@@ -141,6 +149,63 @@ class Activity extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(2),
                   child: LinearProgressIndicator(value: progress, minHeight: 4),
+                ),
+              ],
+              // What is going on beside the stage above, and what is still
+              // to come, so neither turns up unannounced.
+              if (fetchingAside) ...[
+                const SizedBox(height: 12),
+                Text(
+                  reader.downloading == null
+                      ? "Getting gyotaku's own readers ready"
+                      : 'Downloading ${modelName(reader.downloading!)}',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: p.text,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  reader.downloading == null
+                      ? 'Downloading what is missing, then loading them'
+                      : reader.downloadKb == 0
+                      ? '${_mb(reader.downloadedKb)} MB so far'
+                      : '${_mb(reader.downloadedKb)} of '
+                            '${_mb(reader.downloadKb)} MB',
+                  style: TextStyle(fontSize: 13, color: p.muted),
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: reader.downloading == null || reader.downloadKb == 0
+                        ? null
+                        : reader.downloadedKb / reader.downloadKb,
+                    minHeight: 3,
+                  ),
+                ),
+              ],
+              if (next != null) ...[
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, right: 6),
+                      child: Icon(Icons.schedule, size: 15, color: p.muted),
+                    ),
+                    Expanded(
+                      child: Text(
+                        '$next. That is the slow part: seconds an image.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.35,
+                          color: p.muted,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
               if (failed > 0) ...[

@@ -76,6 +76,11 @@ class Reader extends ChangeNotifier {
   bool deep = false;
   String scripts = '';
 
+  /// How many images the second pass still has to go over, for saying what
+  /// comes next while the first is at work. Null when that isn't counted
+  /// yet; with no script on there is no second pass and `scripts` is empty.
+  int? owed;
+
   /// While reading: how long the rest looks like taking, once there is
   /// enough behind to judge by.
   Duration? left;
@@ -279,6 +284,7 @@ class Reader extends ChangeNotifier {
       debugPrint('gyotaku: could not read the scripts: $e');
     }
     final deepReads = on.isEmpty ? null : await DeepReads.load(on);
+    scripts = _named(on);
     final owed = deepReads == null
         ? <_Image>[]
         : [
@@ -286,6 +292,7 @@ class Reader extends ChangeNotifier {
               if (!i.tiny && !deepReads.has(i.path, i.mtime)) i,
           ];
 
+    this.owed = owed.length;
     if (fresh.isEmpty && owed.isEmpty) {
       _set(folders.isEmpty ? ReaderState.noFolder : ReaderState.done);
       await _notice.finish();
@@ -314,6 +321,9 @@ class Reader extends ChangeNotifier {
     fresh.sort(newest);
     owed.sort(newest);
 
+    // A second pass is coming: fetch its readers while the first is at work.
+    if (deepReads != null && owed.isNotEmpty) unawaited(fetchReaders());
+
     final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
     try {
       if (fresh.isNotEmpty) {
@@ -337,8 +347,11 @@ class Reader extends ChangeNotifier {
       }
 
       if (deepReads != null && owed.isNotEmpty && !paused) {
-        scripts = _named(on);
-        await _prepare();
+        // Usually over already: the download began when the script was
+        // turned on. If not, this is the stage that shows it.
+        _set(ReaderState.preparing);
+        _tick(true, now: true);
+        await fetchReaders();
         if (trouble == null) {
           deep = true;
           final before = failed;
@@ -448,12 +461,23 @@ class Reader extends ChangeNotifier {
     return clock.elapsed;
   }
 
-  /// Gets gyotaku's own readers ready, saying how far each download is.
-  Future<void> _prepare() async {
+  /// Downloads and loads gyotaku's own readers, saying how far each
+  /// download is. Started the moment a script is turned on, alongside
+  /// whatever reading is under way, so the wait for it is over by the time
+  /// it is needed and is never a surprise at the end. Asking again while it
+  /// is at it joins the one already going.
+  Future<void> fetchReaders() =>
+      _fetch ??= _fetchReaders().whenComplete(() => _fetch = null);
+
+  Future<void>? _fetch;
+
+  /// Whether the readers are being downloaded or loaded right now.
+  bool get fetching => _fetch != null;
+
+  Future<void> _fetchReaders() async {
     trouble = null;
     downloading = null;
-    _set(ReaderState.preparing);
-    _tick(true, now: true);
+    notifyListeners();
     final poll = Timer.periodic(const Duration(milliseconds: 150), (_) {
       final d = own.downloadProgress();
       final file = d?.file;
@@ -464,20 +488,42 @@ class Reader extends ChangeNotifier {
         downloading = file;
         downloadedKb = d?.doneKb ?? 0;
         downloadKb = d?.totalKb ?? 0;
-        _tick(true, now: stage);
+        _tick(state == ReaderState.preparing, now: stage);
       }
     });
     try {
       await own.loadReaders();
     } catch (e) {
       // No network, no space, a file that changed: say so. The first pass
-      // has already made everything searchable.
+      // makes everything searchable regardless.
       debugPrint('gyotaku: own readers failed: $e');
       trouble = '$e';
     } finally {
       poll.cancel();
       downloading = null;
+      notifyListeners();
     }
+  }
+
+  /// A script was just turned on or off in settings. What follows from
+  /// that is put in view straight away: its reader starts downloading, and
+  /// the second pass is listed as coming, rather than both turning up
+  /// unannounced once the reading under way has finished.
+  Future<void> scriptsChanged() async {
+    var on = <String>[];
+    try {
+      on = [
+        for (final s in await own.scripts())
+          if (s.enabled) s.name,
+      ]..sort();
+    } catch (e) {
+      debugPrint('gyotaku: could not read the scripts: $e');
+    }
+    scripts = _named(on);
+    owed = null;
+    notifyListeners();
+    if (on.isNotEmpty) unawaited(fetchReaders());
+    await run();
   }
 
   // How many images to ask the library about in one go.
@@ -570,7 +616,7 @@ class Reader extends ChangeNotifier {
       ),
       ReaderState.reading => (
         deep ? 'Adding $scripts' : 'Reading screenshots',
-        progressLine,
+        deep || next == null ? progressLine : '$progressLine. $next',
         done,
         total,
       ),
@@ -595,6 +641,17 @@ class Reader extends ChangeNotifier {
       return said.split(': ').last.split('\n').first;
     }
     return '$e'.split('\n').first;
+  }
+
+  /// What follows the reading under way, in a sentence, or null when
+  /// nothing does. So that a second pass, hours long, is expected.
+  String? get next {
+    if (state != ReaderState.reading || deep || scripts.isEmpty) return null;
+    final n = owed;
+    if (n == 0) return null;
+    return n == null
+        ? 'Next: adding $scripts to every image'
+        : 'Next: adding $scripts to $n ${n == 1 ? 'image' : 'images'}';
   }
 
   static String _mb(int kb) => (kb / 1024).toStringAsFixed(1);

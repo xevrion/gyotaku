@@ -96,9 +96,10 @@ class _SettingsState extends State<_Settings> {
       if (mounted) say(context, 'Could not save that setting');
     }
     await _loadScripts();
-    // Either way there is work: with one more on, its model to fetch and
-    // every image to go back over; with one off, nothing owed any more.
-    widget.reader.run();
+    // Either way there is work: with one more on, its reader to fetch
+    // (begun at once, and shown) and every image to go back over; with one
+    // off, nothing owed any more.
+    widget.reader.scriptsChanged();
   }
 
   Future<void> _readAgain() async {
