@@ -63,6 +63,38 @@ pub fn download_progress() -> Option<DownloadProgress> {
     DOWNLOAD.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
+/// Reading is background work: it should take whatever the phone has to
+/// spare and step aside for whatever the person is doing, the way the
+/// desktop reader runs at idle priority. Threads made while this is in force
+/// inherit it, which is how ONNX Runtime's own workers get it too.
+struct Polite;
+
+impl Polite {
+    #[cfg(unix)]
+    fn new() -> Self {
+        // SAFETY: changes the scheduling priority of the calling thread
+        // only, and failing to is harmless.
+        unsafe { libc::setpriority(libc::PRIO_PROCESS as _, 0, 10) };
+        Polite
+    }
+
+    #[cfg(not(unix))]
+    fn new() -> Self {
+        Polite
+    }
+}
+
+impl Drop for Polite {
+    // The thread belongs to the bridge and answers searches next.
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        // SAFETY: as above.
+        unsafe {
+            libc::setpriority(libc::PRIO_PROCESS as _, 0, 0)
+        };
+    }
+}
+
 fn loaded(guard: &mut Option<Ocr>) -> Result<&mut Ocr> {
     if guard.is_none() {
         let scripts = Config::load_or_default().scripts();
@@ -77,6 +109,7 @@ fn loaded(guard: &mut Option<Ocr>) -> Result<&mut Ocr> {
 /// loads them. Until this or the first `read_image` returns,
 /// `download_progress` says how far along it is.
 pub fn load_readers() -> Result<()> {
+    let _polite = Polite::new();
     let mut guard = OCR.lock().unwrap_or_else(|e| e.into_inner());
     loaded(&mut guard).map(|_| ())
 }
@@ -116,8 +149,34 @@ pub fn set_script(name: String, enabled: bool) -> Result<()> {
 /// The first call downloads the models it needs, which is the only time this
 /// touches the network.
 pub fn read_image(path: String) -> Result<Vec<Line>> {
+    let _polite = Polite::new();
     let mut guard = OCR.lock().unwrap_or_else(|e| e.into_inner());
     let ocr = loaded(&mut guard)?;
     let img = gyotaku_ocr::load_image(std::path::Path::new(&path))?;
     Ok(ocr.read(&img)?.into_iter().map(Into::into).collect())
+}
+
+/// Reads only what `known` leaves: the boxes of lines the phone's own
+/// reader already read well. The slow recognizers are then spent on the
+/// Bangla or Devanagari it could make nothing of, not on Latin text it read
+/// in a fraction of the time. See `gyotaku_ocr::Ocr::read_rest`.
+pub fn read_rest(path: String, known: Vec<super::index::Rect>) -> Result<Vec<Line>> {
+    let _polite = Polite::new();
+    let mut guard = OCR.lock().unwrap_or_else(|e| e.into_inner());
+    let ocr = loaded(&mut guard)?;
+    let img = gyotaku_ocr::load_image(std::path::Path::new(&path))?;
+    let known: Vec<gyotaku_core::Rect> = known
+        .into_iter()
+        .map(|r| gyotaku_core::Rect {
+            x: r.x,
+            y: r.y,
+            w: r.w,
+            h: r.h,
+        })
+        .collect();
+    Ok(ocr
+        .read_rest(&img, &known)?
+        .into_iter()
+        .map(Into::into)
+        .collect())
 }

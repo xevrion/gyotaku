@@ -2,6 +2,12 @@
     <!-- Only for the one time download of a reader's model, when an extra
          script is turned on in settings. Nothing is ever sent. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- To keep reading with the window put away, and say how far along it
+         is. See ScanService. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Read only: gyotaku never writes to, moves or deletes a photo. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
@@ -10,6 +16,10 @@
         android:label="gyotaku"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <service
+            android:name=".ScanService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

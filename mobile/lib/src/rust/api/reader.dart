@@ -8,8 +8,9 @@ import 'index.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `loaded`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `loaded`, `new`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Polite`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `drop`, `eq`, `eq`, `fmt`, `fmt`
 
 /// Tells the core where it lives on this phone. `gyotaku-core` finds its
 /// folders the way a Linux program does, from HOME and the XDG variables, and
@@ -44,6 +45,15 @@ Future<void> setScript({required String name, required bool enabled}) =>
 /// touches the network.
 Future<List<Line>> readImage({required String path}) =>
     RustLib.instance.api.crateApiReaderReadImage(path: path);
+
+/// Reads only what `known` leaves: the boxes of lines the phone's own
+/// reader already read well. The slow recognizers are then spent on the
+/// Bangla or Devanagari it could make nothing of, not on Latin text it read
+/// in a fraction of the time. See `gyotaku_ocr::Ocr::read_rest`.
+Future<List<Line>> readRest({
+  required String path,
+  required List<Rect> known,
+}) => RustLib.instance.api.crateApiReaderReadRest(path: path, known: known);
 
 /// How far along the download of one model is.
 class DownloadProgress {

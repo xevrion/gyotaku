@@ -105,6 +105,18 @@ pub fn is_current(path: String, mtime: i64) -> Result<bool> {
     with(|i| i.is_current(Path::new(&path), mtime))
 }
 
+/// `is_current` for a whole page of images at once. Asking one at a time is
+/// a trip across the bridge each, and a library is thousands of them.
+pub fn are_current(paths: Vec<String>, mtimes: Vec<i64>) -> Result<Vec<bool>> {
+    with(|i| {
+        paths
+            .iter()
+            .zip(&mtimes)
+            .map(|(p, &m)| i.is_current(Path::new(p), m))
+            .collect()
+    })
+}
+
 /// Stores a screenshot and the lines read from it, replacing whatever was
 /// there for the same path. Pass 0 x 0 for an image that could not be read,
 /// so it is remembered but never shown.
@@ -231,6 +243,14 @@ mod tests {
         assert_eq!(shot_count().unwrap(), 1);
         assert!(is_current(path.clone(), 1_700_000_000).unwrap());
         assert!(!is_current(path.clone(), 1_700_000_001).unwrap());
+        assert_eq!(
+            are_current(
+                vec![path.clone(), path.clone(), "/nowhere.png".into()],
+                vec![1_700_000_000, 1, 1_700_000_000],
+            )
+            .unwrap(),
+            vec![true, false, false]
+        );
 
         // a substring, as the trigram index allows
         let hits = search("nfirma".into(), 10).unwrap();

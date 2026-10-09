@@ -22,6 +22,14 @@ Future<int> shotCount() => RustLib.instance.api.crateApiIndexShotCount();
 Future<bool> isCurrent({required String path, required PlatformInt64 mtime}) =>
     RustLib.instance.api.crateApiIndexIsCurrent(path: path, mtime: mtime);
 
+/// `is_current` for a whole page of images at once. Asking one at a time is
+/// a trip across the bridge each, and a library is thousands of them.
+Future<List<bool>> areCurrent({
+  required List<String> paths,
+  required Int64List mtimes,
+}) =>
+    RustLib.instance.api.crateApiIndexAreCurrent(paths: paths, mtimes: mtimes);
+
 /// Stores a screenshot and the lines read from it, replacing whatever was
 /// there for the same path. Pass 0 x 0 for an image that could not be read,
 /// so it is remembered but never shown.

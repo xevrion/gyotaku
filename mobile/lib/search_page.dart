@@ -217,9 +217,10 @@ class _SearchPageState extends State<SearchPage> with WidgetsBindingObserver {
                           const Spacer(),
                           if (reader.state == ReaderState.done &&
                               reader.trouble == null &&
-                              reader.failed == 0)
+                              reader.failed == 0 &&
+                              !reader.paused)
                             Text(
-                              'Up to date',
+                              reader.report ?? 'Up to date',
                               style: TextStyle(fontSize: 13, color: p.faint),
                             ),
                         ],

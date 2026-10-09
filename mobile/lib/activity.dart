@@ -10,16 +10,6 @@ class Activity extends StatelessWidget {
 
   final Reader reader;
 
-  /// What a model file is, to someone who never asked for its name.
-  static String _named(String file) {
-    final f = file.toLowerCase();
-    if (f.contains('bengali')) return 'the Bengali reader';
-    if (f.contains('devanagari')) return 'the Devanagari reader';
-    if (f.contains('_det')) return 'the text finder';
-    if (f.contains('_rec')) return 'the text reader';
-    return file;
-  }
-
   static String _mb(int kb) => (kb / 1024).toStringAsFixed(1);
 
   @override
@@ -36,7 +26,7 @@ class Activity extends StatelessWidget {
             reader.toCheck == 0 ? null : reader.checked / reader.toCheck,
           ),
           ReaderState.preparing when reader.downloading != null => (
-            'Downloading ${_named(reader.downloading!)}',
+            'Downloading ${modelName(reader.downloading!)}',
             reader.downloadKb == 0
                 ? '${_mb(reader.downloadedKb)} MB so far'
                 : '${_mb(reader.downloadedKb)} of ${_mb(reader.downloadKb)} MB',
@@ -50,10 +40,13 @@ class Activity extends StatelessWidget {
             null,
           ),
           ReaderState.reading => (
-            'Reading ${(reader.done + 1).clamp(1, reader.total)} of ${reader.total}',
-            reader.own_
-                ? "With gyotaku's own readers, a few seconds each"
-                : reader.current ?? '',
+            reader.deep
+                ? 'Adding ${reader.scripts}'
+                : 'Reading your screenshots',
+            reader.deep
+                ? '${reader.progressLine}. This is the slow part, and it '
+                      'carries on with gyotaku put away.'
+                : reader.progressLine,
             reader.total == 0 ? null : reader.done / reader.total,
           ),
           _ => (null, null, null),
@@ -61,7 +54,10 @@ class Activity extends StatelessWidget {
 
         final trouble = reader.trouble;
         final failed = reader.failed;
-        if (title == null && trouble == null && failed == 0) {
+        final reading = reader.state == ReaderState.reading;
+        // On hold with nothing under way: say so, and how to carry on.
+        final held = reader.paused && !reader.busy && reader.waiting > 0;
+        if (title == null && trouble == null && failed == 0 && !held) {
           return const SizedBox.shrink();
         }
 
@@ -76,22 +72,69 @@ class Activity extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (held) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Reading is paused',
+                            style: TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w600,
+                              color: p.text,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            reader.waiting == 1
+                                ? '1 image is waiting'
+                                : '${reader.waiting} images are waiting',
+                            style: TextStyle(fontSize: 13, color: p.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _Button(label: 'Resume', onTap: reader.resume),
+                  ],
+                ),
+                if (failed > 0 || trouble != null) const SizedBox(height: 12),
+              ],
               if (title != null) ...[
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w600,
-                    color: p.text,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w600,
+                          color: p.text,
+                        ),
+                      ),
+                    ),
+                    if (reading && reader.paused)
+                      Text(
+                        'Pausing after this image',
+                        style: TextStyle(fontSize: 13, color: p.muted),
+                      )
+                    else if (reading)
+                      _Button(label: 'Pause', onTap: reader.pause),
+                  ],
                 ),
                 if (detail!.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Text(
                     detail,
-                    maxLines: 1,
+                    maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, color: p.muted),
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.35,
+                      color: p.muted,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 10),
@@ -133,8 +176,8 @@ class Activity extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  "The phone's reader is being used instead, which reads no "
-                  'Bangla or Devanagari. $trouble',
+                  "Everything is still searchable by what the phone's reader "
+                  'made of it, which is no Bangla or Devanagari. $trouble',
                   maxLines: 4,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 13, height: 1.35, color: p.muted),
@@ -142,7 +185,7 @@ class Activity extends StatelessWidget {
                 if (!reader.busy) ...[
                   const SizedBox(height: 8),
                   GestureDetector(
-                    onTap: reader.prepare,
+                    onTap: reader.run,
                     child: Text(
                       'Try again',
                       style: TextStyle(
@@ -158,6 +201,38 @@ class Activity extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// A word to press, sized for a thumb without shouting like a filled button.
+class _Button extends StatelessWidget {
+  const _Button({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          border: Border.all(color: p.track),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+            color: p.text,
+          ),
+        ),
+      ),
     );
   }
 }

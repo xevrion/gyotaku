@@ -55,13 +55,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<bool> dco_decode_list_bool(dynamic raw);
+
+  @protected
   List<Hit> dco_decode_list_hit(dynamic raw);
 
   @protected
   List<Line> dco_decode_list_line(dynamic raw);
 
   @protected
+  Int64List dco_decode_list_prim_i_64_strict(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<Rect> dco_decode_list_rect(dynamic raw);
 
   @protected
   List<ScriptChoice> dco_decode_list_script_choice(dynamic raw);
@@ -120,13 +129,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<bool> sse_decode_list_bool(SseDeserializer deserializer);
+
+  @protected
   List<Hit> sse_decode_list_hit(SseDeserializer deserializer);
 
   @protected
   List<Line> sse_decode_list_line(SseDeserializer deserializer);
 
   @protected
+  Int64List sse_decode_list_prim_i_64_strict(SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<Rect> sse_decode_list_rect(SseDeserializer deserializer);
 
   @protected
   List<ScriptChoice> sse_decode_list_script_choice(
@@ -199,16 +217,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_bool(List<bool> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_hit(List<Hit> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_line(List<Line> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_prim_i_64_strict(
+    Int64List self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_rect(List<Rect> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_script_choice(

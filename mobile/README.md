@@ -4,7 +4,9 @@ An experimental Flutter app over the same index and search as the desktop app. I
 
 The phone reads its screenshots with the system's own text recognition (ML Kit on Android) and hands the lines to `gyotaku-core`, which stores and searches them exactly as it does on the desktop.
 
-ML Kit reads no Bangla or Devanagari. When one of those scripts is turned on in the app's settings, screenshots are read by `crates/ocr` instead, the same PP-OCRv6 pipeline and extra recognizers as the desktop, on the ONNX Runtime that ships inside the app.
+ML Kit reads no Bangla or Devanagari, so reading is in two passes. The first is ML Kit alone, about a quarter of a second an image, which makes a whole library searchable in minutes. The second only happens while one of those scripts is turned on in settings: each image is gone over again by `crates/ocr`, on the ONNX Runtime that ships inside the app, but only for the lines ML Kit was not sure of (`Ocr::read_rest`). That pass takes seconds an image.
+
+Reading carries on with the app put away, in a foreground service (`android/.../ScanService.kt`) that shows the progress and a line at the end saying how it went. It can be paused from the notification or from the app, and stays paused, across restarts, until resumed. Swiping the app closed also stops it until it is opened again.
 
 ## Layout
 
@@ -51,6 +53,19 @@ Not done or not verified:
 - Reading in the background. Screenshots are read when the app opens or comes back to the front.
 - A real device, a large library, and any measurement of speed or memory.
 - Grouping of near-identical screenshots, moving to the trash, settings, and scripts other than Latin.
+
+## Measured
+
+Pixel 6, Android 17, release build, the phone in use at the time:
+
+| | Time |
+|---|---|
+| First pass, 1,752 images | 6 min 37 s (0.23 s an image) |
+| Second pass with Bengali and Devanagari on, 2,243 images | about 2 h 48 min, estimated by the app from its first 20 |
+| Reading everything with `crates/ocr` and both scripts, as before the two passes | 9.7 s an image, the mean of 8 screenshots |
+| The same 8 screenshots, ML Kit and then `read_rest` | 8.2 s an image |
+
+Several ML Kit readers at once are not used: on the same phone 2, 3, 4 and 6 at once took as long as one (10.2 to 11.5 s against 11.7 s for 60 images) and returned 417, 234, 255 and 103 lines where one returned 1,004.
 
 ## Icon
 
