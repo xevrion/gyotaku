@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist_Mono, Inter } from "next/font/google";
+import { IBM_Plex_Mono, Inter } from "next/font/google";
 import Script from "next/script";
 import { Analytics } from "@vercel/analytics/next";
 import { SmoothScroll } from "@/components/SmoothScroll";
@@ -8,17 +8,18 @@ import { AUTHOR_URL, DESCRIPTION, SITE_URL, TITLE } from "@/lib/site";
 import "./globals.css";
 
 // Inter for everything, with its optical size axis so the big headlines get
-// the tighter display cut and body text the roomier text cut. Geist Mono for
-// commands.
+// the tighter display cut and body text the roomier text cut. IBM Plex Mono
+// for commands: the app itself is set in IBM Plex.
 const sans = Inter({
   variable: "--font-sans-face",
   subsets: ["latin"],
   axes: ["opsz"],
 });
 
-const mono = Geist_Mono({
+const mono = IBM_Plex_Mono({
   variable: "--font-mono-face",
   subsets: ["latin"],
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {

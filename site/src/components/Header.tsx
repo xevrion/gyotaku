@@ -107,7 +107,9 @@ export function Header({ stars = SAVED_STARS, base = "" }: { stars?: number; bas
           ))}
         </nav>
 
-        <div className="flex items-center gap-1 justify-self-end">
+        {/* A wider gap on phones, where the toggle and the menu button grow
+            44px tap areas that would otherwise overlap. */}
+        <div className="flex items-center gap-2 justify-self-end sm:gap-1">
           <a
             href={SPONSOR}
             className="press group hidden h-9 items-center gap-1.5 rounded-lg px-2.5 text-[14px] text-dim hover:text-ink md:flex"
@@ -137,7 +139,7 @@ export function Header({ stars = SAVED_STARS, base = "" }: { stars?: number; bas
             aria-controls="site-menu"
             aria-label={open ? "Close menu" : "Open menu"}
             onClick={() => setOpen((o) => !o)}
-            className="press relative flex size-9 items-center justify-center rounded-lg text-ink md:hidden"
+            className="press relative flex size-9 items-center justify-center rounded-lg text-ink md:hidden pointer-coarse:after:absolute pointer-coarse:after:-inset-1 pointer-coarse:after:content-['']"
           >
             <AnimatePresence initial={false} mode="popLayout">
               <motion.svg

@@ -63,20 +63,21 @@ function Card({
   height?: number;
   children: ReactNode;
 }) {
+  // One row of the list under the showcases: what it does on the left, the
+  // feature running beside it. A list rather than a grid of equal boxes, so
+  // each one reads in turn and its demo gets the width to work in.
   return (
-    <li
-      className={`flex flex-col overflow-hidden rounded-2xl bg-panel shadow-[var(--shadow)] ${wide ? "sm:col-span-2" : ""}`}
-    >
+    <li className="grid grid-cols-[minmax(0,1fr)] gap-6 py-10 first:pt-0 last:pb-0 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] md:items-center md:gap-14 md:py-12">
+      <div className="max-w-sm">
+        <h3 className="text-[20px] leading-snug font-medium tracking-[-0.01em] text-ink">{title}</h3>
+        <p className="mt-2 text-[15.5px] leading-relaxed text-dim">{body}</p>
+      </div>
       <div
         data-card={title}
-        className="@container relative overflow-hidden border-b border-line"
-        style={{ height, "--card-h": `${height}px` } as CSSProperties}
+        className="@container relative overflow-hidden rounded-2xl bg-panel shadow-[var(--shadow)]"
+        style={{ height: wide ? height - 30 : height, "--card-h": `${height}px` } as CSSProperties}
       >
         {children}
-      </div>
-      <div className="flex flex-col gap-1 px-5 pt-4 pb-5">
-        <h3 className="text-[16px] font-medium text-ink">{title}</h3>
-        <p className="text-[14.5px] leading-relaxed text-dim">{body}</p>
       </div>
     </li>
   );
@@ -752,7 +753,9 @@ function TrashDemo() {
       {/* The tiles sit in the space above the bar, so it never covers them. */}
       <div className="relative flex min-h-0 flex-1 items-center px-3 pt-3 pb-[60px]">
         {/* Two by two, so each message stays big enough to read. */}
-        <ul className="grid w-full grid-cols-2 gap-2.5">
+        {/* Capped so a wide row doesn't grow the tiles into the search bar:
+            their height follows their width. */}
+        <ul className="mx-auto grid w-full max-w-[28rem] grid-cols-2 gap-2.5">
           <AnimatePresence mode="popLayout" initial={false}>
             {OTPS.filter((o) => here.includes(o.id)).map((o) => {
               const on = marked.includes(o.id);
@@ -1629,8 +1632,9 @@ export function Features() {
           </Showcase>
         </div>
 
-        <ul className="mt-24 grid grid-cols-1 gap-4 sm:mt-32 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="mt-24 divide-y divide-line sm:mt-32">
           <Card
+            height={420}
             title="Filters for where and when"
             body={
               <>
@@ -1642,6 +1646,7 @@ export function Features() {
             <FiltersDemo />
           </Card>
           <Card
+            height={420}
             title="Clear out a hundred at once"
             body={
               <>

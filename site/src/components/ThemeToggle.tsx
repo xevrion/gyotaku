@@ -110,7 +110,8 @@ export function ThemeToggle() {
         const rect = e.currentTarget.getBoundingClientRect();
         setTheme(next, rect.x + rect.width / 2, rect.y + rect.height / 2);
       }}
-      className="relative flex size-9 items-center justify-center rounded-full text-dim transition-[scale,color,background-color] duration-150 ease-out hover:bg-sunk hover:text-ink active:scale-[0.96] motion-reduce:transition-none"
+      // 36px to look at, 44px to tap on a touch screen (the invisible ring).
+      className="relative flex size-9 items-center justify-center rounded-full text-dim transition-[scale,color,background-color] duration-150 ease-out hover:bg-sunk hover:text-ink active:scale-[0.96] motion-reduce:transition-none pointer-coarse:after:absolute pointer-coarse:after:-inset-1 pointer-coarse:after:content-['']"
     >
       {/* The server can't know the theme, so the icons mount once it's known,
           already in place, instead of animating in on every page load. */}

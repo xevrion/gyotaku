@@ -7,6 +7,7 @@ import { Header } from "@/components/Header";
 import { HeroInstall } from "@/components/HeroInstall";
 import InstallTabs from "@/components/InstallTabs";
 import Numbers from "@/components/Numbers";
+import { Testimonials } from "@/components/Testimonials";
 import SearchDemo from "@/components/SearchDemo";
 import { SiteFooter } from "@/components/SiteFooter";
 import { REPO, REPO_SLUG, SAVED_STARS } from "@/lib/links";
@@ -64,18 +65,7 @@ export default async function Home() {
       <main id="top" className="overflow-x-clip">
         {/* Hero */}
         <Row as="section" inner={`flex flex-col items-center text-center ${INSET} pt-16 pb-16 sm:pt-24 sm:pb-20`}>
-          <a
-            href={`${REPO}/releases/latest`}
-            className="press group inline-flex h-8 items-center gap-2 rounded-full border border-line bg-panel pr-3 pl-1 text-[13px] text-dim hover:text-ink"
-          >
-            <span className="rounded-full bg-sunk px-2 py-0.5 font-medium text-ink tabular-nums">v{VERSION}</span>
-            Free and open source
-            <svg viewBox="0 0 16 16" aria-hidden className="size-3 transition-[translate] duration-200 ease-out group-hover:translate-x-0.5" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3.5 8h9M9 4.5 12.5 8 9 11.5" />
-            </svg>
-          </a>
-
-          <h1 className="font-display mt-7 text-[2.9rem] leading-[1.02] text-ink min-[400px]:text-[3.3rem] sm:text-[4.5rem] sm:leading-[1]">
+          <h1 className="font-display mt-4 text-[2.9rem] leading-[1.02] text-ink min-[400px]:text-[3.3rem] sm:text-[4.5rem] sm:leading-[1]">
             Ctrl F for your <span className="found">screenshots</span>
           </h1>
 
@@ -89,7 +79,15 @@ export default async function Home() {
             <HeroInstall />
           </div>
 
-          <p className="mt-4 text-[13px] text-faint">macOS, Windows and Linux</p>
+          <p className="mt-4 text-[13px] text-faint">
+            macOS, Windows and Linux ·{" "}
+            <a
+              href={`${REPO}/releases/latest`}
+              className="tabular-nums underline decoration-line-strong underline-offset-4 transition-[color,text-decoration-color] duration-150 hover:text-ink hover:decoration-current"
+            >
+              v{VERSION}
+            </a>
+          </p>
         </Row>
 
         {/* The product, live, on Hokusai's Great Wave: a woodblock print, the
@@ -117,6 +115,10 @@ export default async function Home() {
 
         <Row inner={`${INSET} ${SPACE}`}>
           <Features />
+        </Row>
+
+        <Row inner={`${INSET} ${SPACE}`}>
+          <Testimonials />
         </Row>
 
         <Row inner={`${INSET} ${SPACE}`}>
