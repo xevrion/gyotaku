@@ -22,9 +22,9 @@ import androidx.core.app.ServiceCompat
  * the process is not frozen the moment it leaves the screen, hold the
  * processor awake for it, and show how far along it is.
  *
- * It ends when the reading does, when the app is swiped away (the reading
- * dies with it, and picks up where it left off next time), or when Android
- * says its time is up.
+ * It ends when the reading does, when it is paused, or when Android says its
+ * time is up. Swiping the app out of the recent apps list does not end it:
+ * the engine the reader runs in outlives the window, see MainActivity.
  */
 class ScanService : Service() {
     private var awake: PowerManager.WakeLock? = null
@@ -74,10 +74,6 @@ class ScanService : Service() {
         }
         // If the process is killed there is no reading left to keep alive.
         return START_NOT_STICKY
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        stopSelf()
     }
 
     // Android 15 gives this kind of service six hours a day.

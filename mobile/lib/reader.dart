@@ -343,6 +343,7 @@ class Reader extends ChangeNotifier {
           deep = true;
           final before = failed;
           final took = await _pass(owed, (image) async {
+            own.bePolite(polite: _visible);
             // The phone's reader again, for which lines it is sure of: a
             // few tenths of a second against the seconds it saves.
             final phone = await _withPhone(image, recognizer);
@@ -360,6 +361,13 @@ class Reader extends ChangeNotifier {
             generation++;
           });
           deep = false;
+          // A few hundred megabytes of models, not needed again until the
+          // next image turns up.
+          try {
+            await own.releaseReaders();
+          } catch (e) {
+            debugPrint('gyotaku: could not let go of the readers: $e');
+          }
           final read = done - (failed - before);
           said.add(
             'added $scripts to $read ${read == 1 ? 'image' : 'images'} '

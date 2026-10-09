@@ -2,7 +2,8 @@
 //! for the scripts the phone's built in text recognition can't read. With no
 //! extra script turned on, nothing here is used and no model is downloaded.
 
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use anyhow::{Context, Result};
 use flutter_rust_bridge::frb;
@@ -63,42 +64,161 @@ pub fn download_progress() -> Option<DownloadProgress> {
     DOWNLOAD.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
-/// Reading is background work: it should take whatever the phone has to
-/// spare and step aside for whatever the person is doing, the way the
-/// desktop reader runs at idle priority. Threads made while this is in force
-/// inherit it, which is how ONNX Runtime's own workers get it too.
+// How far the reading threads step aside for everything else, as a nice
+// value. 10 while the app is on screen, so its own window stays smooth; 0
+// once it is put away, where Android already holds a background app back
+// and stepping aside twice over made a slow read three times slower.
+static NICE: AtomicI32 = AtomicI32::new(10);
+
+// ONNX Runtime's own worker threads, noted when the readers were loaded.
+static WORKERS: Mutex<Vec<i32>> = Mutex::new(Vec::new());
+
+#[cfg(unix)]
+fn renice(thread: i32, nice: i32) {
+    // SAFETY: changes the scheduling priority of one thread of this
+    // process, and failing to is harmless.
+    unsafe { libc::setpriority(libc::PRIO_PROCESS as _, thread as _, nice) };
+}
+
+#[cfg(not(unix))]
+fn renice(_thread: i32, _nice: i32) {}
+
+/// The processor's faster cores: those whose top speed is within reach of
+/// the fastest. On a phone that is the big and middle cores, on a machine
+/// whose cores are all alike it is all of them. Empty when there is no
+/// telling.
+///
+/// A recognizer splits each line evenly between its threads and waits for
+/// the slowest, so one thread left on a small core at a low clock sets the
+/// pace for all of them. Put away, a Pixel 6 gave the reader two small
+/// cores and two middle ones, and it read at a seventh of its speed.
+fn fast_cores() -> &'static [usize] {
+    static CORES: OnceLock<Vec<usize>> = OnceLock::new();
+    CORES.get_or_init(|| {
+        let speeds: Vec<(usize, u64)> = (0..256)
+            .map_while(|n| {
+                let path = format!("/sys/devices/system/cpu/cpu{n}/cpufreq/cpuinfo_max_freq");
+                let speed = std::fs::read_to_string(path).ok()?.trim().parse().ok()?;
+                Some((n, speed))
+            })
+            .collect();
+        let top = speeds.iter().map(|&(_, s)| s).max().unwrap_or(0);
+        speeds
+            .into_iter()
+            .filter(|&(_, s)| s * 10 >= top * 7)
+            .map(|(n, _)| n)
+            .collect()
+    })
+}
+
+/// Where the reading threads should run just now. On screen, anywhere: the
+/// system gives the app in front its pick of the cores and does the
+/// choosing well. Put away it hands out the small cores too, and that is
+/// when the reader is kept to the faster ones it is still allowed (on a
+/// Pixel 6, about twice the speed of leaving it be: 9 s an image against
+/// 19 s).
+fn cores() -> &'static [usize] {
+    if NICE.load(Ordering::Relaxed) > 0 {
+        &[]
+    } else {
+        fast_cores()
+    }
+}
+
+/// Keeps a thread to `cores`, or with none lets it run anywhere. The
+/// system has the last word: cores it doesn't allow this app are left out,
+/// and if that leaves none the call fails and nothing changes.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+// CPU_SETSIZE is an int on Linux and already a usize on Android.
+#[allow(clippy::unnecessary_cast)]
+fn keep_to(thread: i32, cores: &[usize]) {
+    // SAFETY: a zeroed cpu_set_t is an empty set, and the calls only read
+    // it. Failing is harmless.
+    unsafe {
+        let mut set: libc::cpu_set_t = std::mem::zeroed();
+        if cores.is_empty() {
+            for n in 0..libc::CPU_SETSIZE as usize {
+                libc::CPU_SET(n, &mut set);
+            }
+        } else {
+            for &n in cores {
+                libc::CPU_SET(n, &mut set);
+            }
+        }
+        libc::sched_setaffinity(thread, std::mem::size_of::<libc::cpu_set_t>(), &set);
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn keep_to(_thread: i32, _cores: &[usize]) {}
+
+/// The ids of every thread in this process.
+fn threads() -> Vec<i32> {
+    std::fs::read_dir("/proc/self/task")
+        .map(|dir| {
+            dir.filter_map(|e| e.ok()?.file_name().to_str()?.parse().ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Says whether the app is on screen, which is when reading steps aside
+/// the most. Cheap enough to call before every image.
+#[frb(sync)]
+pub fn be_polite(polite: bool) {
+    let nice = if polite { 10 } else { 0 };
+    let changed = NICE.swap(nice, Ordering::Relaxed) != nice;
+    for &t in WORKERS.lock().unwrap_or_else(|e| e.into_inner()).iter() {
+        if changed {
+            renice(t, nice);
+        }
+        // Every time, not only on a change: which cores the app is allowed
+        // moves as it comes and goes from the screen, and some kernels
+        // forget a thread's own choice when it does.
+        keep_to(t, cores());
+    }
+}
+
+/// The calling thread at the reading priority, and back when dropped: it
+/// belongs to the bridge and answers searches next.
 struct Polite;
 
 impl Polite {
-    #[cfg(unix)]
     fn new() -> Self {
-        // SAFETY: changes the scheduling priority of the calling thread
-        // only, and failing to is harmless.
-        unsafe { libc::setpriority(libc::PRIO_PROCESS as _, 0, 10) };
-        Polite
-    }
-
-    #[cfg(not(unix))]
-    fn new() -> Self {
+        renice(0, NICE.load(Ordering::Relaxed));
+        keep_to(0, cores());
         Polite
     }
 }
 
 impl Drop for Polite {
-    // The thread belongs to the bridge and answers searches next.
     fn drop(&mut self) {
-        #[cfg(unix)]
-        // SAFETY: as above.
-        unsafe {
-            libc::setpriority(libc::PRIO_PROCESS as _, 0, 0)
-        };
+        renice(0, 0);
+        keep_to(0, &[]);
     }
 }
 
 fn loaded(guard: &mut Option<Ocr>) -> Result<&mut Ocr> {
     if guard.is_none() {
         let scripts = Config::load_or_default().scripts();
+        // The first version of the Bengali model, 54 MB that nothing reads
+        // any more.
+        if let Ok(dir) = gyotaku_ocr::models_dir() {
+            let _ = std::fs::remove_file(dir.join("bengali_easyocr_rec.onnx"));
+        }
+        let before = threads();
         let ocr = Ocr::new(gyotaku_core::default_threads(), &scripts);
+        // Whatever threads appeared while loading are the runtime's workers.
+        let workers: Vec<i32> = threads()
+            .into_iter()
+            .filter(|t| !before.contains(t))
+            .collect();
+        let nice = NICE.load(Ordering::Relaxed);
+        for &t in &workers {
+            renice(t, nice);
+            keep_to(t, cores());
+        }
+        *WORKERS.lock().unwrap_or_else(|e| e.into_inner()) = workers;
         *DOWNLOAD.lock().unwrap_or_else(|e| e.into_inner()) = None;
         *guard = Some(ocr?);
     }
@@ -179,4 +299,11 @@ pub fn read_rest(path: String, known: Vec<super::index::Rect>) -> Result<Vec<Lin
         .into_iter()
         .map(Into::into)
         .collect())
+}
+
+/// Lets go of the readers, a few hundred megabytes of models, once there
+/// is nothing left to read. The next read loads them again.
+pub fn release_readers() {
+    *OCR.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    WORKERS.lock().unwrap_or_else(|e| e.into_inner()).clear();
 }

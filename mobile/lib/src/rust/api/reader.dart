@@ -8,7 +8,7 @@ import 'index.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `loaded`, `new`
+// These functions are ignored because they are not marked as `pub`: `loaded`, `new`, `renice`, `threads`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Polite`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `drop`, `eq`, `eq`, `fmt`, `fmt`
 
@@ -25,6 +25,11 @@ void settle({required String home, String? runtime}) =>
 /// times a second.
 DownloadProgress? downloadProgress() =>
     RustLib.instance.api.crateApiReaderDownloadProgress();
+
+/// Says whether the app is on screen, which is when reading steps aside
+/// the most. Cheap enough to call before every image.
+void bePolite({required bool polite}) =>
+    RustLib.instance.api.crateApiReaderBePolite(polite: polite);
 
 /// Gets the readers ready: downloads the models that aren't there yet and
 /// loads them. Until this or the first `read_image` returns,
@@ -54,6 +59,11 @@ Future<List<Line>> readRest({
   required String path,
   required List<Rect> known,
 }) => RustLib.instance.api.crateApiReaderReadRest(path: path, known: known);
+
+/// Lets go of the readers, a few hundred megabytes of models, once there
+/// is nothing left to read. The next read loads them again.
+Future<void> releaseReaders() =>
+    RustLib.instance.api.crateApiReaderReleaseReaders();
 
 /// How far along the download of one model is.
 class DownloadProgress {

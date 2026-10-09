@@ -243,8 +243,8 @@ class _SettingsState extends State<_Settings> {
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 6),
             child: Text(
               'Reading carries on when gyotaku is put away, with its progress '
-              'in a notification. It can be paused there or here, and stays '
-              'paused until resumed.',
+              'in a notification, even after it is swiped closed. It can be '
+              'paused there or here, and stays paused until resumed.',
               style: TextStyle(fontSize: 13, height: 1.4, color: p.faint),
             ),
           ),
