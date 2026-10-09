@@ -241,7 +241,10 @@ fn fetch(url: &str, sha256: &str) -> Result<Vec<u8>> {
         .into_reader()
         .read_to_end(&mut bytes)
         .with_context(|| format!("downloading {url}"))?;
-    let got = format!("{:x}", Sha256::digest(&bytes));
+    let got: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     if got != sha256 {
         bail!("{url} doesn't match its checksum, expected {sha256} got {got}");
     }
