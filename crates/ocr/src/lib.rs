@@ -69,7 +69,44 @@ impl Ocr {
             return Ok(Vec::new());
         }
         let regions = det::detect(&mut self.det, img)?;
-        let mut texts = rec::recognize(&mut self.rec, &self.alphabet, img, &regions)?;
+        self.recognize(img, &regions)
+    }
+
+    /// Reads only the text that `known` doesn't already account for: the
+    /// boxes, in the same normalized coordinates as `Line::rect`, of lines
+    /// something else has read well. For a caller with a faster reader of
+    /// its own that knows fewer scripts, like a phone's built in one, so the
+    /// slow recognizers here are spent only on what that one left.
+    ///
+    /// With nothing left over, no recognizer runs at all.
+    pub fn read_rest(&mut self, img: &RgbImage, known: &[Rect]) -> Result<Vec<Line>> {
+        if img.width() < 8 || img.height() < 8 {
+            return Ok(Vec::new());
+        }
+        let (w, h) = (img.width() as f32, img.height() as f32);
+        let rest: Vec<det::Region> = det::detect(&mut self.det, img)?
+            .into_iter()
+            .filter(|r| {
+                let rect = Rect {
+                    x: r.x0 as f32 / w,
+                    y: r.y0 as f32 / h,
+                    w: r.width() as f32 / w,
+                    h: r.height() as f32 / h,
+                };
+                // A box about as long as it is thick holds a character or
+                // two at most, an icon far more often, and a read of one
+                // character is thrown away anyway (see `worth_keeping`).
+                long_enough(r) && covered(&rect, known) < COVERED
+            })
+            .collect();
+        if rest.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.recognize(img, &rest)
+    }
+
+    fn recognize(&mut self, img: &RgbImage, regions: &[det::Region]) -> Result<Vec<Line>> {
+        let mut texts = rec::recognize(&mut self.rec, &self.alphabet, img, regions)?;
 
         // Only the lines the default reader stumbled on get a second read,
         // which keeps it to about a fifth more time on a typical screenshot
@@ -107,6 +144,44 @@ impl Ocr {
             })
             .collect())
     }
+}
+
+// What `read_rest` won't bother with: on a phone each line handed to the
+// extra recognizers costs about a second, and most boxes this short are
+// icons the other reader rightly ignored.
+const SHORTEST: f32 = 1.3;
+
+fn long_enough(r: &det::Region) -> bool {
+    let (w, h) = (r.width() as f32, r.height() as f32);
+    w.max(h) >= SHORTEST * w.min(h)
+}
+
+// A detected line counts as already read when this much of its length lies
+// under lines the caller vouched for. Never all of it: two readers don't end
+// a line at the same pixel.
+const COVERED: f32 = 0.7;
+
+/// How much of the length of `rect` is under `known`, 0 to 1.
+///
+/// Measured along the line, not by area. The detector here pads its boxes
+/// taller than a phone's reader draws them, so by area a line both had read
+/// in full came out about half covered, and was read again for nothing. A
+/// known box counts when it sits on the same line, which is when the two
+/// overlap by half the height of the shorter. Lengths are added up, so a
+/// line the other reader split into words still counts as whole.
+fn covered(rect: &Rect, known: &[Rect]) -> f32 {
+    if rect.w <= 0.0 || rect.h <= 0.0 {
+        return 1.0;
+    }
+    let under: f32 = known
+        .iter()
+        .filter(|k| {
+            let h = (rect.y + rect.h).min(k.y + k.h) - rect.y.max(k.y);
+            h >= 0.5 * rect.h.min(k.h)
+        })
+        .map(|k| ((rect.x + rect.w).min(k.x + k.w) - rect.x.max(k.x)).max(0.0))
+        .sum();
+    (under / rect.w).min(1.0)
 }
 
 fn model_for(script: Script) -> &'static models::Model {
@@ -271,5 +346,30 @@ mod tests {
         // A stray Devanagari letter, but less sure: the rupee sign stays.
         let old = read("₹1,250.00", 0.943, 5);
         assert!(!better(HINDI, &read("ऱ 1,250.00", 0.888, 5), &old));
+    }
+
+    fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
+        Rect { x, y, w, h }
+    }
+
+    #[test]
+    fn a_line_someone_else_read_is_covered() {
+        let line = rect(0.10, 0.20, 0.50, 0.03);
+        // The same line, boxed a little differently by another reader.
+        assert!(covered(&line, &[rect(0.09, 0.198, 0.52, 0.034)]) >= COVERED);
+        // Boxed tight around the letters, half the height of ours.
+        assert!(covered(&line, &[rect(0.10, 0.207, 0.50, 0.016)]) >= COVERED);
+        // Split in two by the other reader.
+        let halves = [rect(0.10, 0.20, 0.24, 0.03), rect(0.36, 0.20, 0.24, 0.03)];
+        assert!(covered(&line, &halves) >= COVERED);
+    }
+
+    #[test]
+    fn a_line_nobody_read_is_not() {
+        let line = rect(0.10, 0.20, 0.50, 0.03);
+        assert_eq!(covered(&line, &[]), 0.0);
+        // The line above it, and a word that only clips its start.
+        assert!(covered(&line, &[rect(0.10, 0.16, 0.50, 0.03)]) < COVERED);
+        assert!(covered(&line, &[rect(0.05, 0.20, 0.12, 0.03)]) < COVERED);
     }
 }
