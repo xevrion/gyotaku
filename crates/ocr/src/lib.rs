@@ -32,6 +32,8 @@ struct Recognizer {
     script: Script,
     session: Session,
     alphabet: Vec<String>,
+    /// The narrowest batch it is given, see `rec::PADDLE_MIN_WIDTH`.
+    min_width: u32,
 }
 
 impl Ocr {
@@ -52,6 +54,7 @@ impl Ocr {
                     script,
                     session,
                     alphabet,
+                    min_width: min_width_for(script),
                 })
             })
             .collect::<Result<_>>()?;
@@ -106,7 +109,13 @@ impl Ocr {
     }
 
     fn recognize(&mut self, img: &RgbImage, regions: &[det::Region]) -> Result<Vec<Line>> {
-        let mut texts = rec::recognize(&mut self.rec, &self.alphabet, img, regions)?;
+        let mut texts = rec::recognize(
+            &mut self.rec,
+            &self.alphabet,
+            img,
+            regions,
+            rec::PADDLE_MIN_WIDTH,
+        )?;
 
         // Only the lines the default reader stumbled on get a second read,
         // which keeps it to about a fifth more time on a typical screenshot
@@ -119,7 +128,13 @@ impl Ocr {
                 continue;
             }
             let picked: Vec<det::Region> = unsure.iter().map(|&i| regions[i]).collect();
-            let again = rec::recognize(&mut extra.session, &extra.alphabet, img, &picked)?;
+            let again = rec::recognize(
+                &mut extra.session,
+                &extra.alphabet,
+                img,
+                &picked,
+                extra.min_width,
+            )?;
             for (&i, read) in unsure.iter().zip(again) {
                 if better(extra.script, &read, &texts[i]) {
                     texts[i] = read;
@@ -188,6 +203,14 @@ fn model_for(script: Script) -> &'static models::Model {
     match script {
         Script::Devanagari => &models::DEVANAGARI,
         Script::Bengali => &models::BENGALI,
+    }
+}
+
+fn min_width_for(script: Script) -> u32 {
+    match script {
+        Script::Devanagari => rec::PADDLE_MIN_WIDTH,
+        // Not a paddle model, and several times the cost of one per pixel.
+        Script::Bengali => 96,
     }
 }
 

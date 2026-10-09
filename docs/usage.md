@@ -199,7 +199,7 @@ Lines that the default reader already read with confidence, and that contain no 
 
 To check a single image: `gyotaku ocr --script devanagari path/to/screenshot.png`.
 
-**Read Bengali** works the same way for Bangla, Assamese and other text in the Bengali script, with `scripts = ["bengali"]` in `config.toml` and `--script bengali` on the command line. Its model is a 54 MB download and is much slower than the others: a screenshot full of Bangla took 5.3 to 5.8 s to read instead of 0.76 s, and one with no Bangla in it 1.5 s instead of 0.6 s. See [Performance](performance.md#other-scripts).
+**Read Bengali** works the same way for Bangla, Assamese and other text in the Bengali script, with `scripts = ["bengali"]` in `config.toml` and `--script bengali` on the command line. Its model is a 54 MB download and is much slower than the others: a screenshot full of Bangla took 3.1 to 3.3 s to read instead of 0.75 s, and one with no Bangla in it 0.9 s instead of 0.6 s. See [Performance](performance.md#other-scripts).
 
 ## Command-line interface
 

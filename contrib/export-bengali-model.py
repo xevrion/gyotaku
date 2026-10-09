@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds bengali_easyocr_rec.onnx, the recognizer behind `scripts = ["bengali"]`.
+"""Builds bengali_easyocr_rec_v2.onnx, the recognizer behind `scripts = ["bengali"]`.
 
 PaddleOCR has no Bengali recognizer, so this takes EasyOCR's (JaidedAI,
 Apache-2.0) and exports it in the shape crates/ocr/src/rec.rs already reads:
@@ -8,12 +8,15 @@ Apache-2.0) and exports it in the shape crates/ocr/src/rec.rs already reads:
     output  probs  batch x steps x classes, softmax, class 0 the CTC blank
     metadata "character": the alphabet, one character per line, no blank
 
-The model itself wants 64 px tall greyscale lines; that conversion is folded
-into the graph, so nothing in the Rust code is specific to it. The weights are
-then quantized to 8 bits, which takes the file from 215 MB to 54 MB.
+The model itself wants greyscale; that conversion is folded into the graph, so
+nothing in the Rust code is specific to it. It was trained on lines 64 px
+tall and is given them at 48, as they come: scaling them up first (v1 did)
+cost a third more time and read no better, on two screenshots a word or two
+worse. The weights are then quantized to 8 bits, which takes the file from
+215 MB to 54 MB.
 
     pip install easyocr onnx onnxruntime
-    python contrib/export-bengali-model.py bengali_easyocr_rec.onnx
+    python contrib/export-bengali-model.py bengali_easyocr_rec_v2.onnx
 
 After a change here, update the sha256 in crates/ocr/src/models.rs and upload
 the new file to the models release.
@@ -39,9 +42,8 @@ class AsPaddle(nn.Module):
 
     def forward(self, x):
         grey = 0.299 * x[:, 0:1] + 0.587 * x[:, 1:2] + 0.114 * x[:, 2:3]
-        grey = F.interpolate(grey, scale_factor=64 / 48, mode="bilinear", align_corners=False)
-        # The model's own forward, with its pooling over the three rows that
-        # are left written as a mean, so it exports at any width.
+        # The model's own forward, with its pooling over the rows that are
+        # left written as a mean, so it exports at any width.
         seen = self.net.FeatureExtraction(grey).permute(0, 3, 1, 2).mean(3)
         return F.softmax(self.net.Prediction(self.net.SequenceModeling(seen).contiguous()), dim=2)
 
@@ -84,4 +86,4 @@ def main(out):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "bengali_easyocr_rec.onnx")
+    main(sys.argv[1] if len(sys.argv) > 1 else "bengali_easyocr_rec_v2.onnx")
