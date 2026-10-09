@@ -80,11 +80,35 @@ Reading Bengali as well (**Read Bengali** in settings) costs far more, because i
 
 | Screenshot (1080 x 2400) | Default | With Bengali |
 |---|---|---|
-| Bengali Wikipedia article, 33 lines kept | 0.73 to 0.75 s | 3.1 to 3.3 s |
+| Bengali Wikipedia article, 32 lines kept | 0.73 to 0.75 s | 3.1 to 3.3 s |
 | Android home screen with a Bangla widget, 38 lines kept | | 2.3 s |
 | Android settings page in English, 28 lines kept | 0.57 to 0.61 s | 0.90 to 0.93 s |
 
-On the Wikipedia screenshot the default reader returned stray Latin letters for every Bangla line ("GERNAGTGGARANA" at 0.51); the Bengali reader returned the whole lines as text at scores of 0.90 to 1.00 and two fragments (part of a logo, a line cut off by the screen edge) at 0.79 and 0.82, with misreads mostly in punctuation ("।" as "|"). On the English screenshot it changed no line and added two stray ones ("oull @ি" and "8ঃ", from icons). These are three screenshots, not a test set.
+On the Wikipedia screenshot the default reader returned stray Latin letters for every Bangla line ("GERNAGTGGARANA" at 0.51); the Bengali reader returned the whole lines as text at scores of 0.90 to 1.00, with misreads mostly in punctuation ("।" as "|"). On the English screenshot it changed no line and added none. These are three screenshots, not a test set.
+
+A script's reader is only believed when it is sure: 0.9 or more for Devanagari, 0.85 for Bengali. Shown a script it does not know, a recognizer still answers in its own letters. The Devanagari reader read a Bangla shopping list as "खाजक वाजांत्रत जालिका" at 0.79, and 40 such lines came back at 0.58 to 0.89, against 0.97 to 0.99 for real Hindi.
+
+That is not enough for the Bengali reader, which is confident about Hindi it cannot read (0.86 to 0.96). So with both scripts on, each screenshot is put to a vote: every line goes to the reader surest of it, the reader with the most lines has the first say on all of them, and the other keeps only what the first could not read. On screenshots of Hindi, Bengali and English Wikipedia (1080 x 4800, Apple M5, development build):
+
+| Page | Scripts on | Lines in Devanagari | Lines in Bengali | Time |
+|---|---|---|---|---|
+| Hindi | devanagari | 36 | 0 | 1.5 s |
+| Hindi | devanagari and bengali, either order | 36 | 0 | 4.2 to 4.6 s |
+| Hindi | bengali | 0 | 30 | |
+| Bengali | bengali | 0 | 39 | 4.3 to 4.5 s |
+| Bengali | devanagari and bengali, either order | 0 | 39 | 5.1 to 5.3 s |
+| English | none | | | 1.2 s |
+| English | devanagari and bengali, either order | 0 | 2 | 1.6 s |
+
+With both on, the text was identical in both orders and identical to the right reader alone, on all three pages. Before the vote, listing bengali first turned 12 of the 36 Hindi lines into Bengali-looking text. The third row is what is left: with only Bengali on, Hindi is read as Bangla, since there is no second reader to outvote it. Both readers go over every unsure line, which is why a Hindi page takes three times as long with Bengali on as well.
+
+On x86 the Bengali reader costs more than on the M5. Intel i7-14700HX, 4 threads, optimized build (measured by the maintainer):
+
+| Screenshot | Default | With Bengali |
+|---|---|---|
+| Bangla news page | 0.6 s | 3.9 s |
+| Dense Bengali Wikipedia page | 3.9 s | 40 s |
+| English page | 3.7 s | 4.7 s |
 
 The first version of this model took 5.3 to 5.8 s on the Wikipedia screenshot. It scaled each line up to the 64 px the model was trained on; the current one gives it lines at 48 px as they come, and short lines at their own width instead of padded to 320 px. Of 163 words on that screenshot 158 read the same either way, and the rest were no worse.
 
