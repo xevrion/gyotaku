@@ -47,19 +47,29 @@ class ScanService : Service() {
             intent?.getIntExtra(TOTAL, 0) ?: 0,
         )
         try {
-            ServiceCompat.startForeground(
-                this,
-                PROGRESS_ID,
-                notification,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                } else {
-                    0
-                },
-            )
+            // The platform's own call, not ServiceCompat's: that one keeps
+            // only the types its version of the library has heard of, and
+            // media processing came out as no type at all, which Android
+            // refuses.
+            when {
+                // Reading images is media processing, on the versions that
+                // have a name for it.
+                Build.VERSION.SDK_INT >= 35 -> startForeground(
+                    PROGRESS_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING,
+                )
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> startForeground(
+                    PROGRESS_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                )
+                else -> startForeground(PROGRESS_ID, notification)
+            }
         } catch (e: Exception) {
             // Not allowed right now (started from the background, say). The
             // reading carries on for as long as Android lets it.
+            android.util.Log.w("gyotaku", "could not run in the foreground", e)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -76,7 +86,7 @@ class ScanService : Service() {
         return START_NOT_STICKY
     }
 
-    // Android 15 gives this kind of service six hours a day.
+    // Android 15 gives a service of either kind six hours a day.
     override fun onTimeout(startId: Int, fgsType: Int) {
         stopSelf()
     }

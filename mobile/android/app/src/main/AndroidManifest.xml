@@ -3,9 +3,13 @@
          script is turned on in settings. Nothing is ever sent. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- To keep reading with the window put away, and say how far along it
-         is. See ScanService. -->
+         is. See ScanService. What the service does is read images, which
+         Android 15 has a type for: media processing. Android 14 demands a
+         type and does not have that one yet, so there, and only there and
+         earlier, it runs as data sync, the nearest there was. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" android:maxSdkVersion="34" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Read only: gyotaku never writes to, moves or deletes a photo.
@@ -33,7 +37,7 @@
         <service
             android:name=".ScanService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="mediaProcessing|dataSync" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
