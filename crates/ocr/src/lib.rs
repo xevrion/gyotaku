@@ -247,8 +247,29 @@ fn second_read(script: Script, read: &rec::Read) -> bool {
 /// default reader stays in charge of everything else, so turning a script on
 /// never changes how an English or Chinese line reads. Without this, a price
 /// "₹1,250.00" came back as "ऱ 1,250.00", and Chinese as stray letters.
+///
+/// It also has to be sure in its own right. A recognizer shown a script it
+/// doesn't know still answers, in its own letters: the Devanagari one read a
+/// Bangla shopping list as "खाजक वाजांत्रत जालिका" at 0.79, which beat the
+/// default reader's "GAIGAAG3" at 0.59 and went into the index as Hindi.
 fn better(script: Script, new: &rec::Read, old: &rec::Read) -> bool {
-    new.score > old.score && new.text.chars().any(|c| in_script(script, c))
+    new.score >= sure_for(script)
+        && new.score > old.score
+        && new.text.chars().any(|c| in_script(script, c))
+}
+
+/// How sure a script's recognizer has to be before its read is taken.
+fn sure_for(script: Script) -> f32 {
+    match script {
+        // Real Hindi and Marathi lines read at 0.91 to 0.99. Bangla it
+        // can't read came back at 0.58 to 0.89 over 40 lines.
+        Script::Devanagari => 0.9,
+        // Real Bangla lines read from 0.89 up, so there is less room. This
+        // one is not told apart from Hindi by its score: it gave Hindi
+        // lines 0.86 to 0.96. With both scripts on the surer read wins,
+        // which is the Devanagari one's on Hindi.
+        Script::Bengali => 0.85,
+    }
 }
 
 /// UI icons get detected as text and come back as one confident character: a
@@ -385,6 +406,19 @@ mod tests {
         assert!(better(BANGLA, &new, &old));
         // Each script only answers for its own letters.
         assert!(!better(HINDI, &new, &old));
+    }
+
+    // What the Devanagari reader made of two screenshots with no Hindi in
+    // them, and of one with.
+    #[test]
+    fn a_script_it_cannot_read_is_left_alone() {
+        let old = read("GAIGAAG3", 0.59, 0);
+        assert!(second_read(HINDI, &old));
+        assert!(!better(HINDI, &read("खाजक वाजांत्रत जालिका", 0.79, 0), &old));
+        assert!(!better(HINDI, &read("रेलिर्य मार", 0.84, 0), &old));
+        assert!(better(HINDI, &read("कल सुबह 9 बजे बैठक", 0.99, 0), &old));
+        // The Bengali reader still takes the same line.
+        assert!(better(BANGLA, &read("আজকের বাজারের তালিকা", 0.97, 0), &old));
     }
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
