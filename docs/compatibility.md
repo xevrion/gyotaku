@@ -70,6 +70,7 @@ The recognition model's character set contains approximately 18,700 characters c
 |---|---|
 | Latin (English) | Verified |
 | Chinese, Japanese | Supported by the model, not yet verified |
+| Bengali (Bangla, Assamese and others) | Opt-in with **Read Bengali** in settings, an extra 54 MB model. Verified on two real screenshots, a Bengali Wikipedia article and a home screen widget; slower than the other readers, see [Performance](performance.md#other-scripts) |
 | Devanagari (Hindi, Marathi, Nepali and others) | Opt-in with **Read Devanagari** in settings, an extra 7.9 MB model. Verified on rendered Hindi and Marathi text, including lines mixing Hindi and English |
 | Cyrillic, Hangul, Arabic, Hebrew, Thai and others | Not supported |
 

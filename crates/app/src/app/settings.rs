@@ -1426,6 +1426,11 @@ fn script_words(script: Script, on: bool) -> (&'static str, &'static str) {
             "read Devanagari",
             "on for new screenshots, ones read before stay as they were",
         ),
+        (Script::Bengali, false) => ("read Bengali", "Bangla and Assamese, a 54 MB download"),
+        (Script::Bengali, true) => (
+            "read Bengali",
+            "on for new screenshots, ones read before stay as they were",
+        ),
     }
 }
 
