@@ -757,6 +757,38 @@ mod tests {
         hits.iter().map(|h| h.path.to_str().unwrap()).collect()
     }
 
+    // Lines as the Bengali reader gave them back from a screenshot of
+    // Bengali Wikipedia. Same as Devanagari below: vowel signs and the
+    // hasanta are code points of their own to the trigram index.
+    #[test]
+    fn finds_bengali() {
+        let mut idx = Index::open_in_memory().unwrap();
+        idx.insert(
+            &shot("/shots/wiki.png", 100),
+            &[
+                line("দক্ষিণ এশিয়ার সার্বভৌম রাষ্ট্র", 0.1),
+                line("বিচারে প্রায় ২০ কোটিরও অধিক জনসংখ্যা নিয়ে বাংলাদেশ", 0.2),
+            ],
+        )
+        .unwrap();
+        idx.insert(
+            &shot("/shots/widget.png", 200),
+            &[line("সূর্যোদয়: ভোর ৫:৫৩", 0.1), line("Play Store", 0.3)],
+        )
+        .unwrap();
+
+        let found = |q: &str| paths(&idx.search(q, 10).unwrap()).join(" ");
+        assert_eq!(found("বাংলাদেশ"), "/shots/wiki.png");
+        assert_eq!(found("সূর্যোদয়"), "/shots/widget.png");
+        // The middle of a word, through a conjunct.
+        assert_eq!(found("ষ্ট্র"), "/shots/wiki.png");
+        // Two words from different lines.
+        assert_eq!(found("এশিয়ার জনসংখ্যা"), "/shots/wiki.png");
+        // Bengali digits are not folded into Latin ones.
+        assert_eq!(found("৫:৫৩"), "/shots/widget.png");
+        assert_eq!(found("নেই"), "");
+    }
+
     // Lines as the Devanagari reader gave them back from test screenshots.
     // Vowel signs and the virama are their own code points, which the trigram
     // index takes like any other character, and no case folding touches them.

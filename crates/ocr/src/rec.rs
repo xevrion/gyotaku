@@ -10,8 +10,11 @@ use ort::{session::Session, value::Tensor};
 use crate::det::Region;
 
 const HEIGHT: u32 = 48;
-// Paddle never makes a batch narrower than 320 px, short words get padded.
-const MIN_WIDTH: u32 = 320;
+/// Paddle never makes a batch narrower than 320 px, short words get padded,
+/// and its models were trained that way. A model that wasn't can be given
+/// short lines at their own width, which for one as heavy as the Bengali
+/// reader is most of the cost of a screenshot full of short labels.
+pub const PADDLE_MIN_WIDTH: u32 = 320;
 
 // The output is batch * steps * 18710 floats, one step per 8 px of width. That
 // vocabulary is what makes it big: 32 long lines at once is a quarter gigabyte
@@ -52,8 +55,9 @@ pub fn recognize(
     alphabet: &[String],
     img: &RgbImage,
     regions: &[Region],
+    min_width: u32,
 ) -> Result<Vec<Read>> {
-    let mut results = read_lines(session, alphabet, img, regions, Turn::Left)?;
+    let mut results = read_lines(session, alphabet, img, regions, Turn::Left, min_width)?;
 
     // A column turned left reads vertical Japanese and Chinese, top to
     // bottom. A label turned on its side to read upwards, like a chart's
@@ -64,7 +68,7 @@ pub fn recognize(
         .collect();
     if !unsure.is_empty() {
         let columns: Vec<Region> = unsure.iter().map(|&i| regions[i]).collect();
-        let other = read_lines(session, alphabet, img, &columns, Turn::Right)?;
+        let other = read_lines(session, alphabet, img, &columns, Turn::Right, min_width)?;
         for (&i, read) in unsure.iter().zip(other) {
             if read.score > results[i].score {
                 results[i] = read;
@@ -100,6 +104,7 @@ fn read_lines(
     img: &RgbImage,
     regions: &[Region],
     turn: Turn,
+    min_width: u32,
 ) -> Result<Vec<Read>> {
     let mut results = vec![Read::default(); regions.len()];
 
@@ -115,12 +120,13 @@ fn read_lines(
         let mut end = start + 1;
         while end < order.len()
             && end - start < MAX_BATCH
-            && (end - start + 1) as u32 * batch_width(ratio(&regions[order[end]])) <= BATCH_WIDTH
+            && (end - start + 1) as u32 * batch_width(ratio(&regions[order[end]]), min_width)
+                <= BATCH_WIDTH
         {
             end += 1;
         }
         let batch = &order[start..end];
-        let width = batch_width(ratio(&regions[batch[batch.len() - 1]]));
+        let width = batch_width(ratio(&regions[batch[batch.len() - 1]]), min_width);
 
         let input = batch_tensor(&mut resizer, img, regions, batch, width, turn)?;
         let outputs = session.run(ort::inputs![input])?;
@@ -130,8 +136,10 @@ fn read_lines(
         for (n, &i) in batch.iter().enumerate() {
             let slice = &probs[n * steps * classes..(n + 1) * steps * classes];
             // Only the steps over the line itself, not the padding after it.
-            let used = (line_width(&regions[i], width) as usize)
-                .div_ceil(width as usize / steps.max(1))
+            // Not every model steps a whole number of pixels: paddle's take
+            // 8, the Bengali one a little under 3.
+            let used = (line_width(&regions[i], width) as usize * steps)
+                .div_ceil(width as usize)
                 .min(steps);
             results[i] = ctc_decode(&slice[..used * classes], classes, alphabet);
         }
@@ -140,8 +148,8 @@ fn read_lines(
     Ok(results)
 }
 
-fn batch_width(max_ratio: f32) -> u32 {
-    ((HEIGHT as f32 * max_ratio).ceil() as u32).max(MIN_WIDTH)
+fn batch_width(max_ratio: f32, min_width: u32) -> u32 {
+    ((HEIGHT as f32 * max_ratio).ceil() as u32).max(min_width)
 }
 
 /// How wide a line is once scaled to the model's height, within its batch.
@@ -331,7 +339,9 @@ mod tests {
 
     #[test]
     fn batch_width_never_goes_under_paddles_minimum() {
-        assert_eq!(batch_width(0.5), 320);
-        assert_eq!(batch_width(10.0), 480);
+        assert_eq!(batch_width(0.5, PADDLE_MIN_WIDTH), 320);
+        assert_eq!(batch_width(10.0, PADDLE_MIN_WIDTH), 480);
+        // A model that takes short lines as they are.
+        assert_eq!(batch_width(0.5, 96), 96);
     }
 }

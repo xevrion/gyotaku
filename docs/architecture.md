@@ -47,7 +47,7 @@ Single-character lines are discarded, because interface icons are frequently rec
 
 ### Other scripts
 
-The default recognizer covers Latin, Chinese, Japanese and Greek. Other scripts are opt-in, each with a recognizer of its own that is downloaded the first time it is enabled. Devanagari uses PaddleOCR's PP-OCRv5 Devanagari model (7.9 MB), whose alphabet also includes Latin letters, digits and punctuation.
+The default recognizer covers Latin, Chinese, Japanese and Greek. Other scripts are opt-in, each with a recognizer of its own that is downloaded the first time it is enabled. Devanagari uses PaddleOCR's PP-OCRv5 Devanagari model (7.9 MB), whose alphabet also includes Latin letters, digits and punctuation. PaddleOCR has no Bengali recognizer, so Bengali uses EasyOCR's (54 MB after quantizing its weights to 8 bits), exported by `contrib/export-bengali-model.py` to take the same input as the PaddleOCR models.
 
 Detection runs once and the default recognizer reads every line. A line is read again by the extra recognizer when the default one was unsure of it (score under 0.9), or when it contains a long unread stretch: CTC decoding reports the longest run of blank steps, and a glyph outside the model's alphabet produces exactly that. A line that is half English and half Hindi reads the English confidently and leaves a gap of 24 steps where the Hindi was; fully read lines have gaps of 2 to 5. The second reading replaces the first only if it scores higher and contains the script it is for, so enabling a script never changes how English or Chinese text is read.
 
