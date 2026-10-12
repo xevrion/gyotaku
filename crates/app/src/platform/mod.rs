@@ -52,6 +52,10 @@ pub use imp::{listen, resident_address, wake};
 // The window, and the key that brings it up.
 pub use imp::{hides_when_inactive, open_launcher, register_summon, take_focus};
 
+// Whether the summon key can be changed in settings (not on Linux, where the
+// desktop owns it), and what the default is.
+pub use imp::{SUMMON_DEFAULT, summon_rebindable, update_summon};
+
 // Which monitor to open on. The key is pressed while working in another app,
 // often on another screen, and a window that opens where the work isn't is a
 // window you have to look away to use. `None` leaves the choice to gpui,

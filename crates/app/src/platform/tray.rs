@@ -12,7 +12,10 @@ use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, 
 use super::TrayCommand;
 
 /// Kept for as long as the app runs; dropping it takes the icon away.
-struct Tray(#[allow(dead_code)] TrayIcon);
+struct Tray {
+    _icon: TrayIcon,
+    open: MenuItem,
+}
 
 impl Global for Tray {}
 
@@ -75,7 +78,15 @@ pub fn show(look: Look, summon_key: &str, commands: UnboundedSender<TrayCommand>
             }
         }));
     }
-    cx.set_global(Tray(tray));
+    cx.set_global(Tray { _icon: tray, open });
+}
+
+/// Updates the shortcut shown next to "Open gyotaku" in the menu.
+pub fn update_summon(summon_key: &str, cx: &mut App) {
+    if let Some(tray) = cx.try_global::<Tray>() {
+        let summon = summon_key.replace('-', "+").parse::<Accelerator>().ok();
+        let _ = tray.open.set_accelerator(summon);
+    }
 }
 
 /// A PNG made into an icon, decoded once at start. Bundled, so failing to

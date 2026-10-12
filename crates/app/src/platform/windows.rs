@@ -293,10 +293,18 @@ pub fn take_focus(window: &mut Window) {
 
 /// Win+S is Windows search and Win+Shift+S the Snipping Tool, so the
 /// default stays clear of the Windows key.
-const SUMMON: &str = "alt-shift-s";
+pub const SUMMON_DEFAULT: &str = "alt-shift-s";
+
+/// The app registers its own hotkey, so the summon key can be changed here.
+pub fn summon_rebindable() -> bool {
+    true
+}
 
 /// Kept alive for as long as the app runs; dropping it unregisters the key.
-struct Summon(#[allow(dead_code)] GlobalHotKeyManager);
+struct Summon {
+    manager: GlobalHotKeyManager,
+    hotkey: Option<HotKey>,
+}
 
 impl Global for Summon {}
 
@@ -305,23 +313,40 @@ impl Global for Summon {}
 /// knock a second launch would. If another program holds the key, opening
 /// gyotaku from the Start menu still works.
 pub fn register_summon(knocks: UnboundedSender<()>, keys: &BTreeMap<String, String>, cx: &mut App) {
-    let key = keys.get("summon").map_or(SUMMON, String::as_str);
-    let registered = (|| {
-        let hotkey = key.replace('-', "+").parse::<HotKey>().ok()?;
-        let manager = GlobalHotKeyManager::new().ok()?;
-        manager.register(hotkey).ok()?;
-        Some(manager)
-    })();
-    let Some(manager) = registered else {
-        log::warn!("couldn't register {key}, another program may be using it");
+    let key = keys.get("summon").map_or(SUMMON_DEFAULT, String::as_str);
+    let Ok(hotkey) = key.replace('-', "+").parse::<HotKey>() else {
+        log::warn!("couldn't parse {key}");
         return;
     };
-    GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
-        if e.state == HotKeyState::Pressed {
-            let _ = knocks.unbounded_send(());
-        }
-    }));
-    cx.set_global(Summon(manager));
+    if !cx.has_global::<Summon>() {
+        let Ok(manager) = GlobalHotKeyManager::new() else {
+            log::warn!("couldn't create hotkey manager");
+            return;
+        };
+        GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
+            if e.state == HotKeyState::Pressed {
+                let _ = knocks.unbounded_send(());
+            }
+        }));
+        cx.set_global(Summon {
+            manager,
+            hotkey: None,
+        });
+    }
+    let summon = cx.global_mut::<Summon>();
+    if let Some(old) = summon.hotkey.take() {
+        let _ = summon.manager.unregister(old);
+    }
+    if let Err(e) = summon.manager.register(hotkey) {
+        log::warn!("couldn't register {key}: {e}");
+    } else {
+        summon.hotkey = Some(hotkey);
+    }
+}
+
+/// Updates the shortcut shown next to "Open gyotaku" in the notification area.
+pub fn update_summon(key: &str, cx: &mut App) {
+    super::tray::update_summon(key, cx);
 }
 
 /// An icon in the notification area while it waits, the way Raycast and
@@ -340,7 +365,7 @@ pub fn settle_in(
         icon: tray_icon::TrayIconBuilder::new().with_icon(icon),
         click_opens: true,
     };
-    let key = keys.get("summon").map_or(SUMMON, String::as_str);
+    let key = keys.get("summon").map_or(SUMMON_DEFAULT, String::as_str);
     super::tray::show(look, key, commands, cx);
 }
 
@@ -358,7 +383,7 @@ pub fn default_key(_name: &str) -> Option<&'static str> {
     None
 }
 
-/// The platform modifier as hints spell it. Unchanged by this patch.
+/// The platform modifier as hints spell it.
 pub const MODIFIER_NAME: &str = "super";
 
 // The clipboard. Windows keeps its own copy of whatever is put there, so it

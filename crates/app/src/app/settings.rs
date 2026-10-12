@@ -42,6 +42,8 @@ pub(super) struct Settings {
     sizes: Option<(u64, u64)>,
     /// The shortcut waiting for its new keys, by its place in SHORTCUTS.
     recording: Option<usize>,
+    /// Listening for the new summon key.
+    recording_summon: bool,
     scroll: ScrollHandle,
     /// The cursor moved by keyboard, so its row gets scrolled into view.
     reveal: bool,
@@ -62,6 +64,8 @@ enum Row {
     Support,
     Updates,
     Shortcut(usize),
+    /// The global hotkey that summons the window (macOS and Windows only).
+    Summon,
 }
 
 // Both open in the browser through the system; the app itself never touches
@@ -83,6 +87,11 @@ impl Settings {
         rows.extend((0..Script::ALL.len()).map(Row::Script));
         rows.extend([Row::Threads, Row::ClearThumbs, Row::Support, Row::Updates]);
         rows.extend((0..SHORTCUTS.len()).map(Row::Shortcut));
+        // Linux users bind the summon key in their desktop's settings; the
+        // other two have the app register it directly, so it lives here.
+        if platform::summon_rebindable() {
+            rows.push(Row::Summon);
+        }
         rows
     }
 }
@@ -140,6 +149,7 @@ impl Gyotaku {
             shots,
             sizes: None,
             recording: None,
+            recording_summon: false,
             scroll: ScrollHandle::new(),
             reveal: false,
         });
@@ -290,11 +300,13 @@ impl Gyotaku {
                         Some(Row::Support) => cx.open_url(SPONSOR_URL),
                         Some(Row::Updates) => cx.open_url(UPDATES_URL),
                         Some(Row::Shortcut(i)) => self.start_recording(i, cx),
+                        Some(Row::Summon) => self.start_recording_summon(cx),
                         Some(Row::Folder(_)) | None => {}
                     },
                     Key::Remove => match row {
                         Some(Row::Folder(i)) => self.remove_folder(i, cx),
                         Some(Row::Shortcut(i)) => self.reset_shortcut(i, cx),
+                        Some(Row::Summon) => self.reset_summon(cx),
                         _ => {}
                     },
                 }
@@ -424,18 +436,30 @@ impl Gyotaku {
     fn start_recording(&mut self, i: usize, cx: &mut Context<Self>) {
         if let Page::Settings(s) = &mut self.page {
             s.recording = Some(i);
+            s.recording_summon = false;
+            cx.clear_key_bindings();
+        }
+    }
+
+    /// Waits for the next keys pressed, which become the summon key.
+    fn start_recording_summon(&mut self, cx: &mut Context<Self>) {
+        if let Page::Settings(s) = &mut self.page {
+            s.recording = None;
+            s.recording_summon = true;
             cx.clear_key_bindings();
         }
     }
 
     /// Back to listening for shortcuts, with whatever is saved now.
     pub(super) fn stop_recording(&mut self, cx: &mut Context<Self>) {
-        if let Page::Settings(s) = &mut self.page
-            && s.recording.take().is_some()
-        {
-            let overrides = s.config.keys.clone();
-            keys::bind_all(cx, &overrides);
-            cx.notify();
+        if let Page::Settings(s) = &mut self.page {
+            let was_recording = s.recording.take().is_some() || s.recording_summon;
+            s.recording_summon = false;
+            if was_recording {
+                let overrides = s.config.keys.clone();
+                keys::bind_all(cx, &overrides);
+                cx.notify();
+            }
         }
     }
 
@@ -448,9 +472,11 @@ impl Gyotaku {
         let Page::Settings(s) = &self.page else {
             return;
         };
-        let Some(i) = s.recording else {
+        let recording_i = s.recording;
+        let recording_summon = s.recording_summon;
+        if recording_i.is_none() && !recording_summon {
             return;
-        };
+        }
         cx.stop_propagation();
         let k = &e.keystroke;
         if k.key == "escape" && !k.modifiers.modified() {
@@ -461,6 +487,21 @@ impl Gyotaku {
         if let Err(why) = keys::usable(&key) {
             return self.flash(why, cx);
         }
+        if recording_summon {
+            let mut config = s.config.clone();
+            if key == keys::summon_default() {
+                config.keys.remove("summon");
+            } else {
+                config.keys.insert("summon".into(), key.clone());
+            }
+            self.save(config, cx);
+            // Re-register the OS hotkey with the new key.
+            crate::rebind_summon(&self.current_config(), cx);
+            self.stop_recording(cx);
+            self.flash(format!("summon is {} now", keys::pretty(&key)), cx);
+            return;
+        }
+        let i = recording_i.unwrap();
         let mut config = s.config.clone();
         if let Some(j) = keys::taken_by(&key, i, &config.keys) {
             return self.flash(
@@ -507,6 +548,19 @@ impl Gyotaku {
                 shortcut.label,
                 keys::pretty(keys::default(shortcut))
             ),
+            cx,
+        );
+    }
+
+    fn reset_summon(&mut self, cx: &mut Context<Self>) {
+        let mut config = self.current_config();
+        if config.keys.remove("summon").is_none() {
+            return;
+        }
+        self.save(config, cx);
+        crate::rebind_summon(&self.current_config(), cx);
+        self.flash(
+            format!("summon is back to {}", keys::pretty(keys::summon_default())),
             cx,
         );
     }
@@ -799,6 +853,7 @@ impl Gyotaku {
         let sizes = s.sizes;
 
         let recording = s.recording;
+        let recording_summon = s.recording_summon;
         let scroll = s.scroll.clone();
         let reveal = s.reveal;
 
@@ -1084,6 +1139,58 @@ impl Gyotaku {
                         .child(keycap(k, &bound, listening, theme))
                         .into_any_element()
                 }
+                Row::Summon => {
+                    let bound = keys::summon_key(&config.keys).to_string();
+                    let changed = bound != keys::summon_default();
+                    let listening = recording_summon;
+                    let reset = changed.then(|| {
+                        button(
+                            "reset-summon",
+                            "del",
+                            "reset",
+                            theme,
+                            cx.listener(move |this, _: &ClickEvent, _, cx| {
+                                cx.stop_propagation();
+                                this.stop_recording(cx);
+                                this.reset_summon(cx);
+                            }),
+                        )
+                    });
+                    let actions = if listening {
+                        Some(
+                            div()
+                                .flex()
+                                .gap_1()
+                                .child(button(
+                                    "cancel-summon",
+                                    "esc",
+                                    "cancel",
+                                    theme,
+                                    cx.listener(|this, _: &ClickEvent, _, cx| {
+                                        cx.stop_propagation();
+                                        this.stop_recording(cx);
+                                    }),
+                                ))
+                                .children(reset)
+                                .into_any_element(),
+                        )
+                    } else {
+                        reset.map(|r| on_row_hover(ix, selected, r).into_any_element())
+                    };
+                    self.row(ix, selected, theme, cx, Some(Key::Enter))
+                        .child(div().flex_1().flex().flex_col().child("summon").when(
+                            changed,
+                            |d| {
+                                d.child(div().text_xs().text_color(theme.muted).child(format!(
+                                    "changed from {}",
+                                    keys::pretty(keys::summon_default())
+                                )))
+                            },
+                        ))
+                        .children(actions)
+                        .child(keycap(usize::MAX, &bound, listening, theme))
+                        .into_any_element()
+                }
             };
             if ix == cursor {
                 cursor_child = list.len();
@@ -1102,6 +1209,11 @@ impl Gyotaku {
                 .gap_y_2()
                 .text_color(theme.muted)
                 .children(keys::FIXED.iter().map(|(k, what)| hint(*k, what, theme)))
+                .child(hint(
+                    keys::pretty(keys::fixed("mark_one", "ctrl-click")),
+                    "mark one",
+                    theme,
+                ))
                 .into_any_element(),
         );
 
@@ -1718,5 +1830,22 @@ mod short_path_tests {
         let name = "a".repeat(60);
         let s = short_path(&format!("~/{name}"));
         assert_eq!(s, format!("~/{name}"));
+    }
+
+    #[test]
+    fn summon_row_presence_matches_platform() {
+        let settings = super::Settings {
+            config: gyotaku_core::Config::default(),
+            cursor: 0,
+            service: crate::platform::Service::Stopped,
+            shots: Vec::new(),
+            sizes: None,
+            recording: None,
+            recording_summon: false,
+            scroll: gpui::ScrollHandle::new(),
+            reveal: false,
+        };
+        let has_summon = settings.rows().contains(&super::Row::Summon);
+        assert_eq!(has_summon, crate::platform::summon_rebindable());
     }
 }
