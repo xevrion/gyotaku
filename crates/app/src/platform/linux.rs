@@ -466,6 +466,11 @@ fn expand(path: &str, home: &Path) -> PathBuf {
     }
 }
 
+/// Convert the backend's pinch increments to the scale since gesture start.
+pub fn pinch_scale(previous: f32, delta: f32) -> f32 {
+    previous + delta
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

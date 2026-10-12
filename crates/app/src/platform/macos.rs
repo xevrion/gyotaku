@@ -423,6 +423,11 @@ pub fn tool_folders(home: &Path) -> Vec<PathBuf> {
     ]
 }
 
+/// Convert the backend's pinch increments to the scale since gesture start.
+pub fn pinch_scale(previous: f32, delta: f32) -> f32 {
+    previous * (1. + delta)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

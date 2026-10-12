@@ -56,7 +56,7 @@ pub use imp::{hides_when_inactive, open_launcher, register_summon, take_focus};
 // often on another screen, and a window that opens where the work isn't is a
 // window you have to look away to use. `None` leaves the choice to gpui,
 // which centres on the primary monitor.
-pub use imp::active_display;
+pub use imp::{active_display, pinch_scale};
 
 // And whether the window landed there. Windows converts the position it is
 // given with the wrong monitor's scaling when two monitors are scaled

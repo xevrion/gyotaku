@@ -41,6 +41,10 @@ pub struct Config {
     /// a key away (see `burst`). On unless turned off, and only written then.
     #[serde(skip_serializing_if = "Clone::clone")]
     pub group_similar: bool,
+    /// Adapt the search window to the display it opens on. The fixed-size
+    /// palette is still available by turning this off.
+    #[serde(skip_serializing_if = "Clone::clone")]
+    pub dynamic_window_size: bool,
     /// Shortcuts changed from their defaults, by name, like
     /// `trash = "ctrl-backspace"`. Only the changed ones are written. Last,
     /// since a table has to come after the plain values.
@@ -58,6 +62,7 @@ impl Default for Config {
             clipboard_folder: None,
             scripts: Vec::new(),
             group_similar: true,
+            dynamic_window_size: true,
             keys: BTreeMap::new(),
         }
     }
@@ -240,6 +245,7 @@ mod tests {
             clipboard_folder: Some("/c/copied".into()),
             scripts: vec!["devanagari".into()],
             group_similar: false,
+            dynamic_window_size: false,
             keys: BTreeMap::from([("trash".into(), "ctrl-backspace".into())]),
         };
         config.save_to(&path).unwrap();
@@ -249,6 +255,7 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("group_similar = false"), "{text}");
+        assert!(text.contains("dynamic_window_size = false"), "{text}");
         assert_eq!(Config::load_from(&path).unwrap(), Some(config));
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
@@ -264,6 +271,12 @@ mod tests {
         );
         // Missing means on.
         assert!(Config::load_from(&path).unwrap().unwrap().group_similar);
+        assert!(
+            Config::load_from(&path)
+                .unwrap()
+                .unwrap()
+                .dynamic_window_size
+        );
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 

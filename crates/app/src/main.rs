@@ -11,6 +11,7 @@ mod setup;
 mod spring;
 mod stats;
 mod theme;
+mod zoom;
 
 use std::borrow::Cow;
 
@@ -214,6 +215,15 @@ pub(crate) fn summon(cx: &mut App) {
     let window = window.unwrap_or_else(|| open_window(display, size, cx));
     platform::settle_position(window, display, cx);
     let _ = window.update(cx, |view, window, cx| {
+        if gyotaku_core::Config::load_or_default().dynamic_window_size {
+            // Wayland may choose a different output from the initial fallback.
+            // Once mapped, measure the display that actually owns this window.
+            window.on_next_frame(|window, cx| {
+                if let Some(display) = window.display(cx) {
+                    window.resize(window_size_for(display.bounds().size, true));
+                }
+            });
+        }
         window.focus(&gpui::Focusable::focus_handle(view, cx), cx);
         cx.activate(true);
         platform::take_focus(window);
@@ -229,9 +239,21 @@ fn window_size(display: Option<DisplayId>, cx: &App) -> Size<gpui::Pixels> {
         .or_else(|| cx.primary_display())
         .map(|d| d.bounds().size)
         .unwrap_or(size(px(1920.), px(1080.)));
+    window_size_for(
+        screen,
+        gyotaku_core::Config::load_or_default().dynamic_window_size,
+    )
+}
+
+fn window_size_for(screen: Size<gpui::Pixels>, dynamic: bool) -> Size<gpui::Pixels> {
+    let preferred = if dynamic {
+        size(screen.width * 0.75, screen.height * 0.8)
+    } else {
+        size(px(1180.), px(780.))
+    };
     size(
-        px(1180.).min(screen.width * 0.86),
-        px(780.).min(screen.height * 0.84),
+        preferred.width.min(screen.width * 0.86),
+        preferred.height.min(screen.height * 0.84),
     )
 }
 
@@ -271,4 +293,28 @@ fn open_window(
         |window, cx| root(false, window, cx),
     )
     .expect("a window opens")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn automatic_sizing_uses_the_selected_logical_display() {
+        let small = window_size_for(size(px(1280.), px(720.)), true);
+        let large = window_size_for(size(px(2560.), px(1440.)), true);
+        assert!(large.width > small.width && large.height > small.height);
+        assert!(small.width < px(1280.) && small.height < px(720.));
+        assert!(large.width < px(2560.) && large.height < px(1440.));
+    }
+
+    #[test]
+    fn fixed_sizing_retains_the_palette_and_still_fits_small_displays() {
+        assert_eq!(
+            window_size_for(size(px(2560.), px(1440.)), false),
+            size(px(1180.), px(780.))
+        );
+        let small = window_size_for(size(px(800.), px(600.)), false);
+        assert!(small.width < px(800.) && small.height < px(600.));
+    }
 }

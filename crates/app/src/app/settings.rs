@@ -53,6 +53,7 @@ enum Row {
     AddFolder,
     Theme,
     Similar,
+    DisplaySize,
     Background,
     Clipboard,
     /// An extra writing system to read, by its place in `Script::ALL`.
@@ -77,6 +78,7 @@ impl Settings {
             Row::AddFolder,
             Row::Theme,
             Row::Similar,
+            Row::DisplaySize,
             Row::Background,
             Row::Clipboard,
         ]);
@@ -284,6 +286,10 @@ impl Gyotaku {
                         Some(Row::Similar) => {
                             let on = s.config.group_similar;
                             self.set_grouped(!on, cx)
+                        }
+                        Some(Row::DisplaySize) => {
+                            let on = s.config.dynamic_window_size;
+                            self.set_dynamic_window_size(!on, cx)
                         }
                         Some(Row::Threads) => self.change_threads(1, cx),
                         Some(Row::ClearThumbs) => self.clear_thumbnails(cx),
@@ -580,6 +586,38 @@ impl Gyotaku {
         self.unfolded.clear();
         self.refresh(cx);
         self.save(config, cx);
+    }
+
+    fn set_dynamic_window_size(&mut self, on: bool, cx: &mut Context<Self>) {
+        let mut config = self.current_config();
+        config.dynamic_window_size = on;
+        self.save(config, cx);
+    }
+
+    fn display_size_row(
+        &self,
+        ix: usize,
+        selected: bool,
+        on: bool,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        self.row(ix, selected, theme, cx, Some(Key::Enter))
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .child("size window to display")
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted)
+                            .child("use more room on larger screens, from the next open"),
+                    ),
+            )
+            .child(switch("display-size", on, theme))
+            .into_any_element()
     }
 
     fn remove_folder(&mut self, i: usize, cx: &mut Context<Self>) {
@@ -901,6 +939,9 @@ impl Gyotaku {
                         )
                         .child(switch("similar", config.group_similar, theme))
                         .into_any_element()
+                }
+                Row::DisplaySize => {
+                    self.display_size_row(ix, selected, config.dynamic_window_size, theme, cx)
                 }
                 Row::Background => {
                     list.push(section("reading"));
