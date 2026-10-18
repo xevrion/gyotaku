@@ -128,7 +128,20 @@ pub fn take_focus(_: &mut Window) {}
 
 /// Nothing to register: the desktop's own shortcut runs `gyotaku-app`, and
 /// that knocks on the running copy.
-pub fn register_summon(_: UnboundedSender<()>, _: &BTreeMap<String, String>, _: &mut App) {}
+pub fn register_summon(_: UnboundedSender<()>, _: &str, _: &mut App) -> Result<(), &'static str> {
+    Ok(())
+}
+
+/// The desktop owns the summon key, so it can't be changed here.
+pub fn summon_rebindable() -> bool {
+    false
+}
+
+/// Unused on Linux, but must be present so `mod.rs` can re-export it.
+pub const SUMMON_DEFAULT: &str = "";
+
+/// Nothing to update on Linux: there is no tray icon.
+pub fn update_summon(_: &str, _: &mut App) {}
 
 /// Nothing shows while it waits: there's no Dock or taskbar button to hide,
 /// and the desktop's shortcut is the way back in. A tray icon would need a

@@ -95,14 +95,28 @@ pub fn fixed(name: &str, fallback: &'static str) -> &'static str {
     crate::platform::default_key(name).unwrap_or(fallback)
 }
 
-/// Shown in settings next to the ones that can be changed.
-pub const FIXED: [(&str, &str); 6] = [
+/// The default summon key for this platform.
+pub fn summon_default() -> &'static str {
+    crate::platform::SUMMON_DEFAULT
+}
+
+/// The summon key in effect: the stored override if present, otherwise the
+/// platform default.
+pub fn summon_key(keys: &std::collections::BTreeMap<String, String>) -> &str {
+    keys.get("summon")
+        .filter(|k| usable_summon(k).is_ok())
+        .map(String::as_str)
+        .unwrap_or(crate::platform::SUMMON_DEFAULT)
+}
+
+/// Shown in settings next to the ones that can be changed. Marking one
+/// with a click is listed separately: its modifier is Cmd on a mac.
+pub const FIXED: [(&str, &str); 5] = [
     ("esc", "back"),
     ("enter", "open"),
     ("arrows", "move"),
     ("pgup pgdn", "jump"),
     ("shift arrows", "mark a run"),
-    ("ctrl click", "mark one"),
 ];
 
 // The search field edits text with these, and it sits closer to the focus
@@ -164,6 +178,21 @@ pub fn usable(key: &str) -> Result<(), &'static str> {
     }
     if TEXT_EDITING.contains(&key) {
         return Err("the search field uses that one for editing");
+    }
+    Ok(())
+}
+
+/// Refuses system-wide shortcuts (copy, paste, cut, undo, select all, save, quit)
+/// so the global hotkey doesn't steal them from other programs.
+pub fn usable_summon(key: &str) -> Result<(), &'static str> {
+    usable(key)?;
+    let Ok(k) = Keystroke::parse(key) else {
+        return Err("that key can't be used");
+    };
+    let m = k.modifiers;
+    let only_primary = (m.control || m.platform) && !m.alt && !m.shift;
+    if only_primary && matches!(k.key.as_str(), "a" | "c" | "q" | "s" | "v" | "x" | "z") {
+        return Err("other programs need that one for basic shortcuts");
     }
     Ok(())
 }
@@ -330,11 +359,19 @@ mod tests {
             assert!(d.is_empty() || usable(d).is_ok(), "{d}");
         }
         assert!(usable(fixed("add_folder", "ctrl-o")).is_ok());
+        assert!(usable(fixed("mark_one", "ctrl-click")).is_ok());
+        if !summon_default().is_empty() {
+            assert!(usable(summon_default()).is_ok());
+        }
         let none = BTreeMap::new();
         let keys = resolve(&none);
         for (i, s) in SHORTCUTS.iter().enumerate() {
             assert_eq!(keys[i], default(s));
         }
+        assert_eq!(summon_key(&none), summon_default());
+        let mut with_summon = BTreeMap::new();
+        with_summon.insert("summon".to_string(), "ctrl-shift-x".to_string());
+        assert_eq!(summon_key(&with_summon), "ctrl-shift-x");
     }
 
     #[test]
@@ -346,5 +383,22 @@ mod tests {
             pretty("cmd-c").to_string(),
             format!("{} c", crate::platform::MODIFIER_NAME)
         );
+    }
+
+    #[test]
+    fn summon_refuses_basic_system_shortcuts() {
+        for key in [
+            "ctrl-c", "cmd-c", "ctrl-v", "cmd-v", "ctrl-x", "cmd-x", "ctrl-z", "cmd-z", "ctrl-a",
+            "cmd-a", "ctrl-s", "cmd-s", "ctrl-q", "cmd-q",
+        ] {
+            assert!(usable_summon(key).is_err(), "{key} should be refused");
+        }
+        assert!(usable_summon("alt-shift-s").is_ok());
+        assert!(usable_summon("cmd-shift-c").is_ok());
+        assert!(usable_summon("ctrl-shift-x").is_ok());
+
+        let mut bad = BTreeMap::new();
+        bad.insert("summon".to_string(), "cmd-c".to_string());
+        assert_eq!(summon_key(&bad), summon_default());
     }
 }
