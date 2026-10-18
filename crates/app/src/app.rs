@@ -257,9 +257,11 @@ struct Detail {
     grow: bool,
     from: Bounds<Pixels>,
     image_rect: Bounds<Pixels>,
+    preview_area: Bounds<Pixels>,
     hovered: Option<usize>,
     drag: Option<(Point<Pixels>, Point<Pixels>)>,
     picked: Vec<usize>,
+    zoom: crate::zoom::Zoom,
 }
 
 impl Gyotaku {
@@ -1353,6 +1355,7 @@ impl Gyotaku {
 
         if let Some(d) = &mut self.detail {
             d.hit = item;
+            d.zoom = crate::zoom::Zoom::new();
             d.lines = lines;
             d.matched = matched;
             d.hovered = None;
@@ -1379,6 +1382,8 @@ impl Gyotaku {
                 grow,
                 from,
                 image_rect: from,
+                preview_area: from,
+                zoom: crate::zoom::Zoom::new(),
                 hovered: None,
                 drag: None,
                 picked: Vec::new(),
@@ -1435,6 +1440,9 @@ impl Gyotaku {
 
     fn line_at(&self, p: Point<Pixels>) -> Option<usize> {
         let d = self.detail.as_ref()?;
+        if !d.preview_area.contains(&p) {
+            return None;
+        }
         d.lines
             .iter()
             .position(|l| on_screen(l.rect, d.image_rect).contains(&p))
@@ -1458,6 +1466,9 @@ impl Gyotaku {
 
     fn detail_mouse_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(d) = &mut self.detail {
+            if !d.preview_area.contains(&e.position) {
+                return;
+            }
             d.drag = Some((e.position, e.position));
             d.picked.clear();
             cx.notify();
@@ -2043,9 +2054,14 @@ impl Gyotaku {
                 viewport.height - px(DETAIL_TOP + DETAIL_BOTTOM),
             ),
         );
-        let scale = window.scale_factor();
-        let native = (hit.width as f32 / scale, hit.height as f32 / scale);
-        let target = fit(hit.width as f32 / hit.height.max(1) as f32, area, native);
+        d.preview_area = area;
+        let clip = if d.zoom.scale > 1. {
+            area
+        } else {
+            Bounds::new(point(px(0.), px(0.)), viewport)
+        };
+        let base = fit(hit.width as f32 / hit.height.max(1) as f32, area);
+        let target = d.zoom.rect(base, area);
         // The tile only shows the crop, so the full image starts out as the
         // rectangle that would put the crop exactly where the tile was.
         let crop = gyotaku_core::tile_crop(hit.width, hit.height);
@@ -2089,8 +2105,8 @@ impl Gyotaku {
             };
             let mut el = div()
                 .absolute()
-                .left(b.origin.x)
-                .top(b.origin.y)
+                .left(b.origin.x - clip.origin.x)
+                .top(b.origin.y - clip.origin.y)
                 .w(b.size.width)
                 .h(b.size.height)
                 .rounded(px(4.))
@@ -2108,8 +2124,8 @@ impl Gyotaku {
                 let r = Bounds::from_corners(a.min(&b), a.max(&b));
                 div()
                     .absolute()
-                    .left(r.origin.x)
-                    .top(r.origin.y)
+                    .left(r.origin.x - clip.origin.x)
+                    .top(r.origin.y - clip.origin.y)
                     .w(r.size.width)
                     .h(r.size.height)
                     .rounded(px(3.))
@@ -2137,6 +2153,39 @@ impl Gyotaku {
                 } else {
                     CursorStyle::Arrow
                 })
+                .on_pinch(cx.listener(move |this, event: &gpui::PinchEvent, _, cx| {
+                    let Some(detail) = this.detail.as_mut().filter(|d| d.open.target() == 1.)
+                    else {
+                        return;
+                    };
+                    cx.stop_propagation();
+                    if event.phase == gpui::TouchPhase::Started {
+                        detail.zoom.begin();
+                    }
+                    detail.zoom.pinch(event.delta, event.position, base, area);
+                    detail.hovered = None;
+                    detail.drag = None;
+                    cx.notify();
+                }))
+                .on_scroll_wheel(
+                    cx.listener(move |this, event: &gpui::ScrollWheelEvent, _, cx| {
+                        let Some(detail) = this.detail.as_mut().filter(|d| d.open.target() == 1.)
+                        else {
+                            return;
+                        };
+                        let delta = event.delta.pixel_delta(px(24.));
+                        if event.modifiers.control || event.modifiers.platform {
+                            let scale = detail.zoom.scale * (delta.y.as_f32() * 0.0015).exp();
+                            detail.zoom.set(scale, event.position, base, area);
+                        } else if detail.zoom.scale > 1. {
+                            detail.zoom.move_by(delta, base, area);
+                        } else {
+                            return;
+                        }
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                )
                 .on_mouse_move(cx.listener(Self::detail_mouse_move))
                 .on_mouse_down(MouseButton::Left, cx.listener(Self::detail_mouse_down))
                 .on_mouse_up(MouseButton::Left, cx.listener(Self::detail_mouse_up))
@@ -2150,28 +2199,37 @@ impl Gyotaku {
                 )
                 // The thumbnail is already decoded, so it carries the move
                 // until the full size image lands on top of it.
-                .children(thumb.map(|t| {
-                    img(t)
+                .child(
+                    div()
                         .absolute()
-                        .left(thumb_rect.origin.x)
-                        .top(thumb_rect.origin.y)
-                        .w(thumb_rect.size.width)
-                        .h(thumb_rect.size.height)
-                        .rounded(radius)
-                        .opacity(fade)
-                }))
-                .children(full.map(|f| {
-                    img(f)
-                        .absolute()
-                        .left(rect.origin.x)
-                        .top(rect.origin.y)
-                        .w(rect.size.width)
-                        .h(rect.size.height)
-                        .rounded(radius)
-                        .opacity(fade)
-                }))
-                .children(boxes)
-                .children(drag)
+                        .left(clip.origin.x)
+                        .top(clip.origin.y)
+                        .w(clip.size.width)
+                        .h(clip.size.height)
+                        .overflow_hidden()
+                        .children(thumb.map(|t| {
+                            img(t)
+                                .absolute()
+                                .left(thumb_rect.origin.x - clip.origin.x)
+                                .top(thumb_rect.origin.y - clip.origin.y)
+                                .w(thumb_rect.size.width)
+                                .h(thumb_rect.size.height)
+                                .rounded(radius)
+                                .opacity(fade)
+                        }))
+                        .children(full.map(|f| {
+                            img(f)
+                                .absolute()
+                                .left(rect.origin.x - clip.origin.x)
+                                .top(rect.origin.y - clip.origin.y)
+                                .w(rect.size.width)
+                                .h(rect.size.height)
+                                .rounded(radius)
+                                .opacity(fade)
+                        }))
+                        .children(boxes)
+                        .children(drag),
+                )
                 .child(
                     div()
                         .absolute()
@@ -2727,18 +2785,14 @@ fn on_screen(r: Rect, image: Bounds<Pixels>) -> Bounds<Pixels> {
     )
 }
 
-/// The largest rectangle of this aspect that fits in `area`, centred, but no
-/// bigger than `native` (the screenshot's own size in logical pixels). A
-/// small crop blown up to fill the window just looks broken.
-fn fit(aspect: f32, area: Bounds<Pixels>, native: (f32, f32)) -> Bounds<Pixels> {
+/// Use the available preview area, including for smaller screenshots.
+fn fit(aspect: f32, area: Bounds<Pixels>) -> Bounds<Pixels> {
     let (aw, ah) = (area.size.width.as_f32(), area.size.height.as_f32());
     let (w, h) = if aw / ah > aspect {
         (ah * aspect, ah)
     } else {
         (aw, aw / aspect)
     };
-    let shrink = (native.0 / w).min(native.1 / h).min(1.0);
-    let (w, h) = (w * shrink, h * shrink);
     Bounds::new(
         point(
             area.origin.x + px((aw - w) / 2.0),
@@ -2874,23 +2928,23 @@ mod tests {
     #[test]
     fn fit_keeps_the_aspect_and_centres() {
         let area = Bounds::new(point(px(0.), px(0.)), size(px(1000.), px(500.)));
-        let r = fit(1.0, area, (4000.0, 4000.0));
+        let r = fit(1.0, area);
         assert_eq!(r.size, size(px(500.), px(500.)));
         assert_eq!(r.origin.x, px(250.));
     }
 
     #[test]
-    fn fit_never_blows_a_small_shot_up() {
+    fn smaller_shots_use_the_available_width() {
         let area = Bounds::new(point(px(0.), px(0.)), size(px(1000.), px(500.)));
-        let r = fit(586.0 / 134.0, area, (586.0, 134.0));
+        let r = fit(586.0 / 134.0, area);
         let close = |a: Pixels, b: f32| (a.as_f32() - b).abs() < 0.01;
         assert!(
-            close(r.size.width, 586.) && close(r.size.height, 134.),
+            close(r.size.width, 1000.) && close(r.size.height, 1000. * 134. / 586.),
             "{:?}",
             r.size
         );
         assert!(
-            close(r.origin.x, 207.) && close(r.origin.y, 183.),
+            close(r.origin.x, 0.) && close(r.origin.y, (500. - 1000. * 134. / 586.) / 2.),
             "{:?}",
             r.origin
         );
