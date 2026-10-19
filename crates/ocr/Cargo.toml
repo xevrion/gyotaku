@@ -23,4 +23,4 @@ flate2 = "1"
 tar = { version = "0.4", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
-zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
