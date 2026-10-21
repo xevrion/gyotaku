@@ -2,7 +2,6 @@
 //! own shortcut to summon it, and the watcher as a systemd user service or an
 //! XDG autostart entry.
 
-use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -143,10 +142,13 @@ pub const SUMMON_DEFAULT: &str = "";
 /// Nothing to update on Linux: there is no tray icon.
 pub fn update_summon(_: &str, _: &mut App) {}
 
+/// Nothing to update here either, for the same reason.
+pub fn update_paused(_: bool, _: &mut App) {}
+
 /// Nothing shows while it waits: there's no Dock or taskbar button to hide,
 /// and the desktop's shortcut is the way back in. A tray icon would need a
 /// StatusNotifier host most Wayland desktops don't run.
-pub fn settle_in(_: UnboundedSender<TrayCommand>, _: &BTreeMap<String, String>, _: &mut App) {}
+pub fn settle_in(_: UnboundedSender<TrayCommand>, _: &gyotaku_core::Config, _: &mut App) {}
 
 /// Nothing to do: the portal's folder picker comes up in front on its own.
 pub fn before_picker(_: &mut App) {}

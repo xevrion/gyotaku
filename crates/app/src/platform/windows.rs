@@ -5,7 +5,6 @@
 //! the app runs and isn't already reading. It holds a lock file while it
 //! runs, which is how the app knows.
 
-use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Write as _;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -356,13 +355,18 @@ pub fn update_summon(key: &str, cx: &mut App) {
     super::tray::update_summon(key, cx);
 }
 
+/// Flips the notification area's "Pause reading" to "Resume reading".
+pub fn update_paused(paused: bool, cx: &mut App) {
+    super::tray::update_paused(paused, cx);
+}
+
 /// An icon in the notification area while it waits, the way Raycast and
 /// the other launchers on Windows sit: a click opens the window, a right
 /// click has Settings and Quit. The window itself is a tool window, so it
 /// never puts a button on the taskbar.
 pub fn settle_in(
     commands: UnboundedSender<TrayCommand>,
-    keys: &BTreeMap<String, String>,
+    config: &gyotaku_core::Config,
     cx: &mut App,
 ) {
     let Some(icon) = super::tray::icon(include_bytes!("../../../../assets/tray.png")) else {
@@ -372,8 +376,11 @@ pub fn settle_in(
         icon: tray_icon::TrayIconBuilder::new().with_icon(icon),
         click_opens: true,
     };
-    let key = keys.get("summon").map_or(SUMMON_DEFAULT, String::as_str);
-    super::tray::show(look, key, commands, cx);
+    let key = config
+        .keys
+        .get("summon")
+        .map_or(SUMMON_DEFAULT, String::as_str);
+    super::tray::show(look, key, config.paused, commands, cx);
 }
 
 /// Nothing to do: the folder dialog comes up in front on its own.

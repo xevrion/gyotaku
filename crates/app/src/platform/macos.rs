@@ -5,7 +5,6 @@
 //! the app runs and isn't already reading. It holds a lock file while it
 //! runs, which is how the app knows.
 
-use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -220,6 +219,11 @@ pub fn update_summon(key: &str, cx: &mut App) {
     super::tray::update_summon(key, cx);
 }
 
+/// Flips the menu bar's "Pause reading" to "Resume reading".
+pub fn update_paused(paused: bool, cx: &mut App) {
+    super::tray::update_paused(paused, cx);
+}
+
 /// Becomes an accessory app, the way Raycast and Spotlight-style launchers
 /// run: no Dock icon and no Cmd+Tab entry, so there's nothing to quit by
 /// accident and the summon key always finds it waiting. gpui makes every app
@@ -227,7 +231,7 @@ pub fn update_summon(key: &str, cx: &mut App) {
 /// this has the last word. A menu bar icon takes the Dock icon's place.
 pub fn settle_in(
     commands: UnboundedSender<TrayCommand>,
-    keys: &BTreeMap<String, String>,
+    config: &gyotaku_core::Config,
     cx: &mut App,
 ) {
     if let Some(main) = MainThreadMarker::new() {
@@ -241,8 +245,11 @@ pub fn settle_in(
         icon: tray_icon::TrayIconBuilder::new().with_icon_templated(icon),
         click_opens: false,
     };
-    let key = keys.get("summon").map_or(SUMMON_DEFAULT, String::as_str);
-    super::tray::show(look, key, commands, cx);
+    let key = config
+        .keys
+        .get("summon")
+        .map_or(SUMMON_DEFAULT, String::as_str);
+    super::tray::show(look, key, config.paused, commands, cx);
 }
 
 /// The window is a non-activating panel, so gyotaku is never the active app

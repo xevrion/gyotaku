@@ -1833,6 +1833,13 @@ impl Gyotaku {
             if let Some((done, of)) = r.progress() {
                 let label = format!("reading {} of {}", thousands(done), thousands(of));
                 Some((label, Some(self.reading_bar_now())))
+            } else if let Some(left) = r.paused() {
+                // Shown even with nothing left, so a pause isn't forgotten.
+                let label = match left {
+                    0 => "reading paused".to_string(),
+                    n => format!("reading paused, {} left", thousands(n)),
+                };
+                Some((label, None))
             } else {
                 r.getting_ready()
                     .then(|| ("getting ready".to_string(), None))
@@ -1960,6 +1967,10 @@ impl Gyotaku {
                         "the folders you picked have none. take one, or add a folder in settings ({settings})"
                     )
                     .into(),
+                ),
+                Some(r @ ReaderState { running: true, .. }) if r.paused().is_some() => (
+                    "reading is paused".into(),
+                    format!("resume it in settings ({settings})").into(),
                 ),
                 Some(ReaderState {
                     running: true,
@@ -2838,6 +2849,15 @@ impl ReaderState {
     fn getting_ready(&self) -> bool {
         self.line.starts_with("getting")
     }
+
+    /// `paused, 12 left` as 12, and a plain `paused` as nothing left.
+    fn paused(&self) -> Option<usize> {
+        let rest = self.line.strip_prefix("paused")?;
+        if rest.is_empty() {
+            return Some(0);
+        }
+        rest.strip_prefix(", ")?.strip_suffix(" left")?.parse().ok()
+    }
 }
 
 /// `nothing_searchable` is when the empty screen needs to know whether the
@@ -2846,7 +2866,8 @@ impl ReaderState {
 /// bar standing.
 fn reader_state(nothing_searchable: bool) -> ReaderState {
     let line = gyotaku_core::status::get().unwrap_or_default();
-    let busy = line.starts_with("reading") || line.starts_with("getting");
+    let busy =
+        line.starts_with("reading") || line.starts_with("getting") || line.starts_with("paused");
     ReaderState {
         running: (busy || nothing_searchable) && gyotaku_core::status::reader_running(),
         line,
@@ -2889,6 +2910,10 @@ mod tests {
         assert_eq!(state("up to date").progress(), None);
         assert_eq!(state("reading your screenshots").progress(), None);
         assert!(state("getting the text reader ready").getting_ready());
+        assert_eq!(state("paused").paused(), Some(0));
+        assert_eq!(state("paused, 340 left").paused(), Some(340));
+        assert_eq!(state("reading 12 of 340").paused(), None);
+        assert_eq!(state("pausedx").paused(), None);
     }
 
     #[test]

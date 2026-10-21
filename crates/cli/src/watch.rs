@@ -91,6 +91,16 @@ fn idle_status(denied: &[PathBuf]) -> String {
     }
 }
 
+/// What the window shows while nothing is being read, paused or caught up.
+/// `waiting` is how many are queued for when reading resumes.
+fn rest_status(paused: bool, waiting: usize, denied: &[PathBuf]) -> String {
+    match (paused, waiting) {
+        (false, _) => idle_status(denied),
+        (true, 0) => "paused".into(),
+        (true, n) => format!("paused, {n} left"),
+    }
+}
+
 /// Folders given on the command line are fixed. Without them the watcher
 /// follows the config file, so adding or removing a folder in the app takes
 /// effect here straight away, no restart.
@@ -112,6 +122,9 @@ pub fn run(fixed: Option<Vec<PathBuf>>, threads: Option<usize>) -> Result<()> {
     let mut threads_now = threads.unwrap_or(config.threads);
     let mut scripts_now = config.scripts();
     let follow_config = fixed.is_none();
+    // Paused, files are still watched (renames and deletes keep the index
+    // right, and they cost nothing), but nothing gets read.
+    let mut paused = follow_config && config.paused;
 
     status::set("getting the text reader ready, the first time this downloads 22 MB");
     let indexer = match Indexer::new(threads_now, &scripts_now) {
@@ -173,11 +186,14 @@ pub fn run(fixed: Option<Vec<PathBuf>>, threads: Option<usize>) -> Result<()> {
     let mut power = Power::default();
     // How far through the backlog, for the window: (done, of).
     let mut progress = (0, backlog.len());
-    status::set(&if caught_up {
-        idle_status(&denied)
+    status::set(&if caught_up || paused {
+        rest_status(paused, backlog.len(), &denied)
     } else {
         "reading your screenshots".into()
     });
+    // How many the paused status last said were left, so it's only written
+    // again when that changes.
+    let mut said_left = paused.then_some(backlog.len());
     // When the folders were last looked over in full, for RESCAN_EVERY.
     let mut looked = Instant::now();
 
@@ -207,12 +223,13 @@ pub fn run(fixed: Option<Vec<PathBuf>>, threads: Option<usize>) -> Result<()> {
             }
         };
         // Block for as long as there is nothing else to do.
+        let working = !paused && (!backlog.is_empty() || settling);
         let wait = if !w.pending.is_empty() || !w.leaving.is_empty() {
             SETTLE
-        } else if !backlog.is_empty() || settling || !w.arrived.is_empty() || w.rescan {
+        } else if working || !w.arrived.is_empty() || w.rescan {
             // Working through an old library can wait, a laptop's battery
             // matters more. Anything new still wakes this straight away.
-            if power.on_battery() && (!backlog.is_empty() || settling) {
+            if working && power.on_battery() {
                 BATTERY_PACE
             } else {
                 Duration::ZERO
@@ -290,8 +307,8 @@ pub fn run(fixed: Option<Vec<PathBuf>>, threads: Option<usize>) -> Result<()> {
                             "reading with {threads_now} threads and {} extra scripts now",
                             scripts_now.len()
                         );
-                        if caught_up {
-                            status::set(&idle_status(&denied));
+                        if caught_up || paused {
+                            status::set(&rest_status(paused, backlog.len(), &denied));
                         }
                     }
                     Err(e) => {
@@ -303,6 +320,16 @@ pub fn run(fixed: Option<Vec<PathBuf>>, threads: Option<usize>) -> Result<()> {
             w.folders = folders;
             w.roots = real_roots(&w.folders);
             denied = unreadable(&w.folders);
+            if config.paused != paused {
+                paused = config.paused;
+                eprintln!("{}", if paused { "paused" } else { "resumed" });
+                said_left = None;
+                // Resumed with nothing queued, the reading below never runs
+                // to say so.
+                if !paused && caught_up {
+                    status::set(&idle_status(&denied));
+                }
+            }
         }
 
         // A folder that appeared brings files no event mentioned, and lost
@@ -315,7 +342,7 @@ pub fn run(fixed: Option<Vec<PathBuf>>, threads: Option<usize>) -> Result<()> {
             w.roots = real_roots(&w.folders);
             let was = denied.len();
             denied = unreadable(&w.folders);
-            if denied.len() != was && caught_up {
+            if denied.len() != was && caught_up && !paused {
                 status::set(&idle_status(&denied));
             }
             w.folders.clone()
@@ -343,6 +370,20 @@ pub fn run(fixed: Option<Vec<PathBuf>>, threads: Option<usize>) -> Result<()> {
             .into_iter()
             .filter(|p| p.is_file() && w.reads(p))
             .collect();
+        if paused {
+            // Still first in line once reading resumes.
+            for path in fresh.into_iter().rev() {
+                if w.indexer.needs_reading(&path) && !backlog.contains(&path) {
+                    backlog.push_front(path);
+                    caught_up = false;
+                }
+            }
+            if said_left != Some(backlog.len()) {
+                said_left = Some(backlog.len());
+                status::set(&rest_status(true, backlog.len(), &denied));
+            }
+            continue;
+        }
         if !fresh.is_empty() {
             for path in fresh {
                 if index(&mut w.indexer, &path) == Read::Again {

@@ -15,6 +15,7 @@ use super::TrayCommand;
 struct Tray {
     _icon: TrayIcon,
     open: MenuItem,
+    pause: MenuItem,
 }
 
 impl Global for Tray {}
@@ -30,16 +31,28 @@ pub struct Look {
 
 /// Puts the icon up with its menu. Picking an item, or clicking the icon
 /// where that opens the window, sends a command to the app.
-pub fn show(look: Look, summon_key: &str, commands: UnboundedSender<TrayCommand>, cx: &mut App) {
+pub fn show(
+    look: Look,
+    summon_key: &str,
+    paused: bool,
+    commands: UnboundedSender<TrayCommand>,
+    cx: &mut App,
+) {
     // Shown beside the item the way each system draws shortcuts. A menu that
     // isn't a window's menu bar never acts on it, so the key stays the
     // global hotkey's alone.
     let summon = summon_key.replace('-', "+").parse::<Accelerator>().ok();
     let open = MenuItem::with_id("open", "Open gyotaku", true, summon);
     let settings = MenuItem::with_id("settings", "Settings…", true, None);
+    let pause = MenuItem::with_id("pause", pause_text(paused), true, None);
     let quit = MenuItem::with_id("quit", "Quit gyotaku", true, None);
-    let Ok(menu) = Menu::with_items(&[&open, &settings, &PredefinedMenuItem::separator(), &quit])
-    else {
+    let Ok(menu) = Menu::with_items(&[
+        &open,
+        &settings,
+        &pause,
+        &PredefinedMenuItem::separator(),
+        &quit,
+    ]) else {
         return;
     };
     let built = look
@@ -61,6 +74,7 @@ pub fn show(look: Look, summon_key: &str, commands: UnboundedSender<TrayCommand>
         let command = match e.id.as_ref() {
             "open" => TrayCommand::Open,
             "settings" => TrayCommand::Settings,
+            "pause" => TrayCommand::Pause,
             "quit" => TrayCommand::Quit,
             _ => return,
         };
@@ -78,7 +92,27 @@ pub fn show(look: Look, summon_key: &str, commands: UnboundedSender<TrayCommand>
             }
         }));
     }
-    cx.set_global(Tray { _icon: tray, open });
+    cx.set_global(Tray {
+        _icon: tray,
+        open,
+        pause,
+    });
+}
+
+fn pause_text(paused: bool) -> &'static str {
+    if paused {
+        "Resume reading"
+    } else {
+        "Pause reading"
+    }
+}
+
+/// Says the other one once reading is paused or resumed, from here or from
+/// settings.
+pub fn update_paused(paused: bool, cx: &mut App) {
+    if let Some(tray) = cx.try_global::<Tray>() {
+        tray.pause.set_text(pause_text(paused));
+    }
 }
 
 /// Updates the shortcut shown next to "Open gyotaku" in the menu.

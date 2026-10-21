@@ -57,6 +57,7 @@ enum Row {
     Similar,
     DisplaySize,
     Background,
+    Pause,
     Clipboard,
     /// An extra writing system to read, by its place in `Script::ALL`.
     Script(usize),
@@ -84,6 +85,7 @@ impl Settings {
             Row::Similar,
             Row::DisplaySize,
             Row::Background,
+            Row::Pause,
             Row::Clipboard,
         ]);
         rows.extend((0..Script::ALL.len()).map(Row::Script));
@@ -272,6 +274,7 @@ impl Gyotaku {
                                 self.change_threads(if forward { 1 } else { -1 }, cx)
                             }
                             Some(Row::Background) => self.set_background(forward, cx),
+                            Some(Row::Pause) => self.set_paused(forward, cx),
                             Some(Row::Clipboard) => self.set_clipboard(forward, cx),
                             Some(Row::Script(i)) => self.set_script(i, forward, cx),
                             Some(Row::Similar) => self.set_grouped(forward, cx),
@@ -284,6 +287,10 @@ impl Gyotaku {
                         Some(Row::Background) => {
                             let on = matches!(s.service, Service::Running);
                             self.set_background(!on, cx)
+                        }
+                        Some(Row::Pause) => {
+                            let on = s.config.paused;
+                            self.set_paused(!on, cx)
                         }
                         Some(Row::Clipboard) => {
                             let on = s.config.clipboard;
@@ -645,6 +652,24 @@ impl Gyotaku {
         self.unfolded.clear();
         self.refresh(cx);
         self.save(config, cx);
+    }
+
+    /// The reader follows the config, so it stops after the screenshot it's
+    /// on. Also what the tray's pause item does, through here so an open
+    /// settings page never saves over it.
+    pub(crate) fn set_paused(&mut self, on: bool, cx: &mut Context<Self>) {
+        let mut config = self.current_config();
+        if config.paused == on {
+            return;
+        }
+        config.paused = on;
+        self.save(config, cx);
+        // Read back rather than `on`, which a failed save didn't store.
+        platform::update_paused(self.paused(), cx);
+    }
+
+    pub(crate) fn paused(&self) -> bool {
+        self.current_config().paused
     }
 
     fn set_dynamic_window_size(&mut self, on: bool, cx: &mut Context<Self>) {
@@ -1017,6 +1042,24 @@ impl Gyotaku {
                                 .child(div().text_xs().text_color(theme.muted).child(status)),
                         )
                         .child(switch("background", on, theme))
+                        .into_any_element()
+                }
+                Row::Pause => {
+                    let detail = if config.paused {
+                        "new screenshots wait until you turn this off"
+                    } else {
+                        "stops reading for now, search keeps working"
+                    };
+                    self.row(ix, selected, theme, cx, Some(Key::Enter))
+                        .child(
+                            div()
+                                .flex_1()
+                                .flex()
+                                .flex_col()
+                                .child("pause reading")
+                                .child(div().text_xs().text_color(theme.muted).child(detail)),
+                        )
+                        .child(switch("pause", config.paused, theme))
                         .into_any_element()
                 }
                 Row::Clipboard => {

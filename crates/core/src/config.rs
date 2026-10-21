@@ -45,6 +45,10 @@ pub struct Config {
     /// The fixed-size palette remains the default.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub dynamic_window_size: bool,
+    /// Reading waits until this is turned off again: the screenshots taken
+    /// meanwhile queue up, and what's already read stays searchable.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub paused: bool,
     /// Shortcuts changed from their defaults, by name, like
     /// `trash = "ctrl-backspace"`. Only the changed ones are written. Last,
     /// since a table has to come after the plain values.
@@ -63,6 +67,7 @@ impl Default for Config {
             scripts: Vec::new(),
             group_similar: true,
             dynamic_window_size: false,
+            paused: false,
             keys: BTreeMap::new(),
         }
     }
@@ -246,6 +251,7 @@ mod tests {
             scripts: vec!["devanagari".into()],
             group_similar: false,
             dynamic_window_size: true,
+            paused: true,
             keys: BTreeMap::from([("trash".into(), "ctrl-backspace".into())]),
         };
         config.save_to(&path).unwrap();
@@ -256,6 +262,7 @@ mod tests {
         );
         assert!(text.contains("group_similar = false"), "{text}");
         assert!(text.contains("dynamic_window_size = true"), "{text}");
+        assert!(text.contains("paused = true"), "{text}");
         assert_eq!(Config::load_from(&path).unwrap(), Some(config));
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
@@ -269,7 +276,8 @@ mod tests {
             !text.contains("keys")
                 && !text.contains("clipboard")
                 && !text.contains("similar")
-                && !text.contains("dynamic_window_size"),
+                && !text.contains("dynamic_window_size")
+                && !text.contains("paused"),
             "{text}"
         );
         // Missing means on.

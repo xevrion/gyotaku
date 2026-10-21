@@ -82,7 +82,7 @@ fn main() -> Result<()> {
         // the window puts itself away when it isn't active.
         if listener.is_some() {
             let (commands, mut picked) = futures::channel::mpsc::unbounded();
-            platform::settle_in(commands, &config.keys, cx);
+            platform::settle_in(commands, &config, cx);
             cx.spawn(async move |cx| {
                 while let Some(command) = picked.next().await {
                     cx.update(|cx| tray(command, cx));
@@ -211,6 +211,22 @@ fn tray(command: platform::TrayCommand, cx: &mut App) {
                 });
             }
         }
+        // Through the view where there is one, so settings, if it's open,
+        // knows. Started in the background, nothing's been opened yet.
+        platform::TrayCommand::Pause => match cx.try_global::<Kept>().map(|k| k.0.clone()) {
+            Some(view) => view.update(cx, |view, cx| {
+                let paused = view.paused();
+                view.set_paused(!paused, cx);
+            }),
+            None => {
+                let mut config = gyotaku_core::Config::load_or_default();
+                config.paused = !config.paused;
+                match config.save() {
+                    Ok(()) => platform::update_paused(config.paused, cx),
+                    Err(e) => log::warn!("couldn't save the config: {e:#}"),
+                }
+            }
+        },
         platform::TrayCommand::Quit => cx.quit(),
     }
 }
