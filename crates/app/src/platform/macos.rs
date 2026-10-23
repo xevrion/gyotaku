@@ -5,7 +5,6 @@
 //! the app runs and isn't already reading. It holds a lock file while it
 //! runs, which is how the app knows.
 
-use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -43,8 +42,8 @@ pub const WORDS: Words = Words {
 
 /// The Mac namespace: Cmd where Linux and Windows say Ctrl, written
 /// `cmd` the way gpui spells the platform modifier back when recording.
-/// Returning None means the shared default stands; every shortcut is
-/// overridden today.
+/// Returning None means the shared default stands. Every shortcut is
+/// overridden today, plus the fixed mark-one click.
 pub fn default_key(name: &str) -> Option<&'static str> {
     match name {
         "copy_text" => Some("cmd-c"),
@@ -64,6 +63,7 @@ pub fn default_key(name: &str) -> Option<&'static str> {
         // stays in the menu bar icon's menu.
         "quit" => Some(""),
         "add_folder" => Some("cmd-o"),
+        "mark_one" => Some("cmd-click"),
         _ => None,
     }
 }
@@ -157,34 +157,71 @@ pub fn take_focus(_window: &mut Window) {}
 
 /// Cmd is every app's own shortcut namespace, so the default stays on
 /// Option+Shift, like opening Spotlight used to be.
-const SUMMON: &str = "alt-shift-s";
+pub const SUMMON_DEFAULT: &str = "alt-shift-s";
+
+/// The app registers its own hotkey, so the summon key can be changed here.
+pub fn summon_rebindable() -> bool {
+    true
+}
 
 /// Kept alive for as long as the app runs; dropping it unregisters the key.
-struct Summon(#[allow(dead_code)] GlobalHotKeyManager);
+struct Summon {
+    manager: GlobalHotKeyManager,
+    hotkey: Option<HotKey>,
+}
 
 impl Global for Summon {}
 
 /// The resident process registers the key itself, and each press sends the
 /// same knock a second launch would. If another program holds the key,
 /// opening gyotaku from Spotlight still works.
-pub fn register_summon(knocks: UnboundedSender<()>, keys: &BTreeMap<String, String>, cx: &mut App) {
-    let key = keys.get("summon").map_or(SUMMON, String::as_str);
-    let registered = (|| {
-        let hotkey = key.replace('-', "+").parse::<HotKey>().ok()?;
-        let manager = GlobalHotKeyManager::new().ok()?;
-        manager.register(hotkey).ok()?;
-        Some(manager)
-    })();
-    let Some(manager) = registered else {
-        log::warn!("couldn't register {key}, another program may be using it");
-        return;
+pub fn register_summon(
+    knocks: UnboundedSender<()>,
+    key: &str,
+    cx: &mut App,
+) -> Result<(), &'static str> {
+    let Ok(hotkey) = key.replace('-', "+").parse::<HotKey>() else {
+        log::warn!("couldn't parse {key}");
+        return Err("that key can't be used");
     };
-    GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
-        if e.state == HotKeyState::Pressed {
-            let _ = knocks.unbounded_send(());
-        }
-    }));
-    cx.set_global(Summon(manager));
+    if !cx.has_global::<Summon>() {
+        let Ok(manager) = GlobalHotKeyManager::new() else {
+            log::warn!("couldn't create hotkey manager");
+            return Err("couldn't create hotkey manager");
+        };
+        GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
+            if e.state == HotKeyState::Pressed {
+                let _ = knocks.unbounded_send(());
+            }
+        }));
+        cx.set_global(Summon {
+            manager,
+            hotkey: None,
+        });
+    }
+    let summon = cx.global_mut::<Summon>();
+    if summon.hotkey == Some(hotkey) {
+        return Ok(());
+    }
+    if let Err(e) = summon.manager.register(hotkey) {
+        log::warn!("couldn't register {key}: {e}");
+        return Err("already in use by another program");
+    }
+    if let Some(old) = summon.hotkey.take() {
+        let _ = summon.manager.unregister(old);
+    }
+    summon.hotkey = Some(hotkey);
+    Ok(())
+}
+
+/// Updates the shortcut shown next to "Open gyotaku" in the menu bar.
+pub fn update_summon(key: &str, cx: &mut App) {
+    super::tray::update_summon(key, cx);
+}
+
+/// Flips the menu bar's "Pause reading" to "Resume reading".
+pub fn update_paused(paused: bool, cx: &mut App) {
+    super::tray::update_paused(paused, cx);
 }
 
 /// Becomes an accessory app, the way Raycast and Spotlight-style launchers
@@ -194,7 +231,7 @@ pub fn register_summon(knocks: UnboundedSender<()>, keys: &BTreeMap<String, Stri
 /// this has the last word. A menu bar icon takes the Dock icon's place.
 pub fn settle_in(
     commands: UnboundedSender<TrayCommand>,
-    keys: &BTreeMap<String, String>,
+    config: &gyotaku_core::Config,
     cx: &mut App,
 ) {
     if let Some(main) = MainThreadMarker::new() {
@@ -208,8 +245,11 @@ pub fn settle_in(
         icon: tray_icon::TrayIconBuilder::new().with_icon_templated(icon),
         click_opens: false,
     };
-    let key = keys.get("summon").map_or(SUMMON, String::as_str);
-    super::tray::show(look, key, commands, cx);
+    let key = config
+        .keys
+        .get("summon")
+        .map_or(SUMMON_DEFAULT, String::as_str);
+    super::tray::show(look, key, config.paused, commands, cx);
 }
 
 /// The window is a non-activating panel, so gyotaku is never the active app
@@ -421,6 +461,11 @@ pub fn tool_folders(home: &Path) -> Vec<PathBuf> {
         home.join("Pictures/Shots"),
         home.join("Pictures/Monosnap"),
     ]
+}
+
+/// Convert the backend's pinch increments to the scale since gesture start.
+pub fn pinch_scale(previous: f32, delta: f32) -> f32 {
+    previous * (1. + delta)
 }
 
 #[cfg(test)]

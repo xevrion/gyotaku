@@ -85,7 +85,7 @@ jobs:
           cp LICENSE dist/gyotaku/LICENSE.txt
           cp crates/app/fonts/OFL.txt dist/gyotaku/FONTS-OFL.txt
           cp contrib/windows-readme.txt dist/gyotaku/README.txt
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gyotaku-windows-x64
           path: dist/gyotaku
@@ -163,7 +163,7 @@ jobs:
           $now = @((Get-Process gyotaku-app).Id)
           if ($now.Count -ne 1 -or $now[0] -ne $first) { throw "a second launch didn't hand over to the running copy" }
           Get-Process gyotaku-app | Stop-Process -Force
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: windows-screens
@@ -177,7 +177,7 @@ jobs:
       - name: test the setup
         shell: pwsh
         run: contrib\windows\test-setup.ps1 dist\gyotaku-setup-x86_64.exe
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gyotaku-setup-x86_64
           path: dist/gyotaku-setup-x86_64.exe

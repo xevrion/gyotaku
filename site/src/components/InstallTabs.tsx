@@ -123,7 +123,9 @@ export default function InstallTabs() {
                 aria-controls="install-panel"
                 tabIndex={selected ? 0 : -1}
                 onClick={() => pick(t.id)}
-                className={`press relative h-8 rounded-[8px] px-3.5 text-sm font-medium transition-[color] duration-150 ${
+                // Tabs sit edge to edge, so on touch screens the tap area
+                // grows up and down only, never into the next tab.
+                className={`press relative h-8 rounded-[8px] px-3.5 text-sm font-medium transition-[color] duration-150 pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5 pointer-coarse:after:content-[''] ${
                   selected ? "text-ink" : "text-dim hover:text-ink"
                 }`}
               >
@@ -283,7 +285,7 @@ function CopyButton({ text, primary = false }: { text: string; primary?: boolean
           type="button"
           onClick={copy}
           aria-label="copy command"
-          className={`press relative grid size-8 shrink-0 place-items-center rounded-[8px] transition-[color,background-color] duration-150 hover:bg-panel ${
+          className={`press relative grid size-8 shrink-0 place-items-center rounded-[8px] transition-[color,background-color] duration-150 hover:bg-panel pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 pointer-coarse:after:content-[''] ${
             copied ? "text-shu" : "text-dim hover:text-ink"
           }`}
         >

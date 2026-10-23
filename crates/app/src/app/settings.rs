@@ -42,6 +42,8 @@ pub(super) struct Settings {
     sizes: Option<(u64, u64)>,
     /// The shortcut waiting for its new keys, by its place in SHORTCUTS.
     recording: Option<usize>,
+    /// Listening for the new summon key.
+    recording_summon: bool,
     scroll: ScrollHandle,
     /// The cursor moved by keyboard, so its row gets scrolled into view.
     reveal: bool,
@@ -53,7 +55,9 @@ enum Row {
     AddFolder,
     Theme,
     Similar,
+    DisplaySize,
     Background,
+    Pause,
     Clipboard,
     /// An extra writing system to read, by its place in `Script::ALL`.
     Script(usize),
@@ -62,6 +66,8 @@ enum Row {
     Support,
     Updates,
     Shortcut(usize),
+    /// The global hotkey that summons the window (macOS and Windows only).
+    Summon,
 }
 
 // Both open in the browser through the system; the app itself never touches
@@ -77,12 +83,19 @@ impl Settings {
             Row::AddFolder,
             Row::Theme,
             Row::Similar,
+            Row::DisplaySize,
             Row::Background,
+            Row::Pause,
             Row::Clipboard,
         ]);
         rows.extend((0..Script::ALL.len()).map(Row::Script));
         rows.extend([Row::Threads, Row::ClearThumbs, Row::Support, Row::Updates]);
         rows.extend((0..SHORTCUTS.len()).map(Row::Shortcut));
+        // Linux users bind the summon key in their desktop's settings; the
+        // other two have the app register it directly, so it lives here.
+        if platform::summon_rebindable() {
+            rows.push(Row::Summon);
+        }
         rows
     }
 }
@@ -140,6 +153,7 @@ impl Gyotaku {
             shots,
             sizes: None,
             recording: None,
+            recording_summon: false,
             scroll: ScrollHandle::new(),
             reveal: false,
         });
@@ -260,6 +274,7 @@ impl Gyotaku {
                                 self.change_threads(if forward { 1 } else { -1 }, cx)
                             }
                             Some(Row::Background) => self.set_background(forward, cx),
+                            Some(Row::Pause) => self.set_paused(forward, cx),
                             Some(Row::Clipboard) => self.set_clipboard(forward, cx),
                             Some(Row::Script(i)) => self.set_script(i, forward, cx),
                             Some(Row::Similar) => self.set_grouped(forward, cx),
@@ -273,6 +288,10 @@ impl Gyotaku {
                             let on = matches!(s.service, Service::Running);
                             self.set_background(!on, cx)
                         }
+                        Some(Row::Pause) => {
+                            let on = s.config.paused;
+                            self.set_paused(!on, cx)
+                        }
                         Some(Row::Clipboard) => {
                             let on = s.config.clipboard;
                             self.set_clipboard(!on, cx)
@@ -285,16 +304,22 @@ impl Gyotaku {
                             let on = s.config.group_similar;
                             self.set_grouped(!on, cx)
                         }
+                        Some(Row::DisplaySize) => {
+                            let on = s.config.dynamic_window_size;
+                            self.set_dynamic_window_size(!on, cx)
+                        }
                         Some(Row::Threads) => self.change_threads(1, cx),
                         Some(Row::ClearThumbs) => self.clear_thumbnails(cx),
                         Some(Row::Support) => cx.open_url(SPONSOR_URL),
                         Some(Row::Updates) => cx.open_url(UPDATES_URL),
                         Some(Row::Shortcut(i)) => self.start_recording(i, cx),
+                        Some(Row::Summon) => self.start_recording_summon(cx),
                         Some(Row::Folder(_)) | None => {}
                     },
                     Key::Remove => match row {
                         Some(Row::Folder(i)) => self.remove_folder(i, cx),
                         Some(Row::Shortcut(i)) => self.reset_shortcut(i, cx),
+                        Some(Row::Summon) => self.reset_summon(cx),
                         _ => {}
                     },
                 }
@@ -424,18 +449,30 @@ impl Gyotaku {
     fn start_recording(&mut self, i: usize, cx: &mut Context<Self>) {
         if let Page::Settings(s) = &mut self.page {
             s.recording = Some(i);
+            s.recording_summon = false;
+            cx.clear_key_bindings();
+        }
+    }
+
+    /// Waits for the next keys pressed, which become the summon key.
+    fn start_recording_summon(&mut self, cx: &mut Context<Self>) {
+        if let Page::Settings(s) = &mut self.page {
+            s.recording = None;
+            s.recording_summon = true;
             cx.clear_key_bindings();
         }
     }
 
     /// Back to listening for shortcuts, with whatever is saved now.
     pub(super) fn stop_recording(&mut self, cx: &mut Context<Self>) {
-        if let Page::Settings(s) = &mut self.page
-            && s.recording.take().is_some()
-        {
-            let overrides = s.config.keys.clone();
-            keys::bind_all(cx, &overrides);
-            cx.notify();
+        if let Page::Settings(s) = &mut self.page {
+            let was_recording = s.recording.take().is_some() || s.recording_summon;
+            s.recording_summon = false;
+            if was_recording {
+                let overrides = s.config.keys.clone();
+                keys::bind_all(cx, &overrides);
+                cx.notify();
+            }
         }
     }
 
@@ -448,9 +485,11 @@ impl Gyotaku {
         let Page::Settings(s) = &self.page else {
             return;
         };
-        let Some(i) = s.recording else {
+        let recording_i = s.recording;
+        let recording_summon = s.recording_summon;
+        if recording_i.is_none() && !recording_summon {
             return;
-        };
+        }
         cx.stop_propagation();
         let k = &e.keystroke;
         if k.key == "escape" && !k.modifiers.modified() {
@@ -461,6 +500,25 @@ impl Gyotaku {
         if let Err(why) = keys::usable(&key) {
             return self.flash(why, cx);
         }
+        if recording_summon {
+            if let Err(why) = keys::usable_summon(&key) {
+                return self.flash(why, cx);
+            }
+            if let Err(why) = crate::rebind_summon(&key, cx) {
+                return self.flash(why, cx);
+            }
+            let mut config = s.config.clone();
+            if key == keys::summon_default() {
+                config.keys.remove("summon");
+            } else {
+                config.keys.insert("summon".into(), key.clone());
+            }
+            self.save(config, cx);
+            self.stop_recording(cx);
+            self.flash(format!("summon is {} now", keys::pretty(&key)), cx);
+            return;
+        }
+        let i = recording_i.unwrap();
         let mut config = s.config.clone();
         if let Some(j) = keys::taken_by(&key, i, &config.keys) {
             return self.flash(
@@ -509,6 +567,20 @@ impl Gyotaku {
             ),
             cx,
         );
+    }
+
+    fn reset_summon(&mut self, cx: &mut Context<Self>) {
+        let mut config = self.current_config();
+        if !config.keys.contains_key("summon") {
+            return;
+        }
+        let default = keys::summon_default();
+        if let Err(why) = crate::rebind_summon(default, cx) {
+            return self.flash(why, cx);
+        }
+        config.keys.remove("summon");
+        self.save(config, cx);
+        self.flash(format!("summon is back to {}", keys::pretty(default)), cx);
     }
 
     fn current_config(&self) -> Config {
@@ -580,6 +652,56 @@ impl Gyotaku {
         self.unfolded.clear();
         self.refresh(cx);
         self.save(config, cx);
+    }
+
+    /// The reader follows the config, so it stops after the screenshot it's
+    /// on. Also what the tray's pause item does, through here so an open
+    /// settings page never saves over it.
+    pub(crate) fn set_paused(&mut self, on: bool, cx: &mut Context<Self>) {
+        let mut config = self.current_config();
+        if config.paused == on {
+            return;
+        }
+        config.paused = on;
+        self.save(config, cx);
+        // Read back rather than `on`, which a failed save didn't store.
+        platform::update_paused(self.paused(), cx);
+    }
+
+    pub(crate) fn paused(&self) -> bool {
+        self.current_config().paused
+    }
+
+    fn set_dynamic_window_size(&mut self, on: bool, cx: &mut Context<Self>) {
+        let mut config = self.current_config();
+        config.dynamic_window_size = on;
+        self.save(config, cx);
+    }
+
+    fn display_size_row(
+        &self,
+        ix: usize,
+        selected: bool,
+        on: bool,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        self.row(ix, selected, theme, cx, Some(Key::Enter))
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .child("size window to display")
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted)
+                            .child("use more room on larger screens, from the next open"),
+                    ),
+            )
+            .child(switch("display-size", on, theme))
+            .into_any_element()
     }
 
     fn remove_folder(&mut self, i: usize, cx: &mut Context<Self>) {
@@ -799,6 +921,7 @@ impl Gyotaku {
         let sizes = s.sizes;
 
         let recording = s.recording;
+        let recording_summon = s.recording_summon;
         let scroll = s.scroll.clone();
         let reveal = s.reveal;
 
@@ -902,6 +1025,9 @@ impl Gyotaku {
                         .child(switch("similar", config.group_similar, theme))
                         .into_any_element()
                 }
+                Row::DisplaySize => {
+                    self.display_size_row(ix, selected, config.dynamic_window_size, theme, cx)
+                }
                 Row::Background => {
                     list.push(section("reading"));
                     let on = service == Service::Running;
@@ -916,6 +1042,24 @@ impl Gyotaku {
                                 .child(div().text_xs().text_color(theme.muted).child(status)),
                         )
                         .child(switch("background", on, theme))
+                        .into_any_element()
+                }
+                Row::Pause => {
+                    let detail = if config.paused {
+                        "new screenshots wait until you turn this off"
+                    } else {
+                        "stops reading for now, search keeps working"
+                    };
+                    self.row(ix, selected, theme, cx, Some(Key::Enter))
+                        .child(
+                            div()
+                                .flex_1()
+                                .flex()
+                                .flex_col()
+                                .child("pause reading")
+                                .child(div().text_xs().text_color(theme.muted).child(detail)),
+                        )
+                        .child(switch("pause", config.paused, theme))
                         .into_any_element()
                 }
                 Row::Clipboard => {
@@ -1084,6 +1228,58 @@ impl Gyotaku {
                         .child(keycap(k, &bound, listening, theme))
                         .into_any_element()
                 }
+                Row::Summon => {
+                    let bound = keys::summon_key(&config.keys).to_string();
+                    let changed = bound != keys::summon_default();
+                    let listening = recording_summon;
+                    let reset = changed.then(|| {
+                        button(
+                            "reset-summon",
+                            "del",
+                            "reset",
+                            theme,
+                            cx.listener(move |this, _: &ClickEvent, _, cx| {
+                                cx.stop_propagation();
+                                this.stop_recording(cx);
+                                this.reset_summon(cx);
+                            }),
+                        )
+                    });
+                    let actions = if listening {
+                        Some(
+                            div()
+                                .flex()
+                                .gap_1()
+                                .child(button(
+                                    "cancel-summon",
+                                    "esc",
+                                    "cancel",
+                                    theme,
+                                    cx.listener(|this, _: &ClickEvent, _, cx| {
+                                        cx.stop_propagation();
+                                        this.stop_recording(cx);
+                                    }),
+                                ))
+                                .children(reset)
+                                .into_any_element(),
+                        )
+                    } else {
+                        reset.map(|r| on_row_hover(ix, selected, r).into_any_element())
+                    };
+                    self.row(ix, selected, theme, cx, Some(Key::Enter))
+                        .child(div().flex_1().flex().flex_col().child("summon").when(
+                            changed,
+                            |d| {
+                                d.child(div().text_xs().text_color(theme.muted).child(format!(
+                                    "changed from {}",
+                                    keys::pretty(keys::summon_default())
+                                )))
+                            },
+                        ))
+                        .children(actions)
+                        .child(keycap(usize::MAX, &bound, listening, theme))
+                        .into_any_element()
+                }
             };
             if ix == cursor {
                 cursor_child = list.len();
@@ -1102,6 +1298,11 @@ impl Gyotaku {
                 .gap_y_2()
                 .text_color(theme.muted)
                 .children(keys::FIXED.iter().map(|(k, what)| hint(*k, what, theme)))
+                .child(hint(
+                    keys::pretty(keys::fixed("mark_one", "ctrl-click")),
+                    "mark one",
+                    theme,
+                ))
                 .into_any_element(),
         );
 
@@ -1723,5 +1924,22 @@ mod short_path_tests {
         let name = "a".repeat(60);
         let s = short_path(&format!("~/{name}"));
         assert_eq!(s, format!("~/{name}"));
+    }
+
+    #[test]
+    fn summon_row_presence_matches_platform() {
+        let settings = super::Settings {
+            config: gyotaku_core::Config::default(),
+            cursor: 0,
+            service: crate::platform::Service::Stopped,
+            shots: Vec::new(),
+            sizes: None,
+            recording: None,
+            recording_summon: false,
+            scroll: gpui::ScrollHandle::new(),
+            reveal: false,
+        };
+        let has_summon = settings.rows().contains(&super::Row::Summon);
+        assert_eq!(has_summon, crate::platform::summon_rebindable());
     }
 }

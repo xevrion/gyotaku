@@ -110,6 +110,7 @@ Search for what you no longer need, mark the results, and move them to the trash
 - Click `+N similar` on a thumbnail to show the similar screenshots folded behind it, and `hide N` to fold them back.
 - The bar that appears while screenshots are marked can also be clicked.
 - On an open screenshot, hover to show the detected lines, click a line to copy it, or drag a rectangle to copy every line it intersects.
+- Pinch on an open screenshot to zoom around the pointer. Scroll to pan while zoomed in. Ctrl+scroll (Cmd+scroll on macOS) also zooms. Pinch out to return to the fitted view.
 
 ## Settings
 
@@ -120,7 +121,9 @@ Open settings with Ctrl+,.
 | Folders | Folders to index. The home directory and `/` are rejected; select the specific folders your screenshots are saved to. |
 | Theme | System, light or dark. |
 | Group similar screenshots | On by default. Shows near-identical screenshots taken close together as one tile. See [Similar screenshots](#similar-screenshots). |
+| Size window to display | Off by default. Enable it to use more room on larger displays. Turning it off restores the fixed palette size. Applies the next time the window opens; stored as `dynamic_window_size` in the config. |
 | Background indexing | Enables or disables the background indexer. See [Background indexing](#background-indexing). |
+| Pause reading | Off by default. Stops reading screenshots, old and new, until it is turned off again; everything already read stays searchable, and screenshots taken meanwhile are read first on resuming. Also in the tray menu on Windows and the menu bar on macOS. Stored as `paused` in the config. |
 | Save copied images | Off by default. Saves every image copied to the clipboard into its own folder, so images that were never saved anywhere become searchable. See [Copied images](#copied-images). |
 | Read Devanagari | Off by default. Also reads Hindi, Marathi, Nepali and other text in Devanagari. See [Other scripts](#other-scripts). |
 | Read Bengali | Off by default. Also reads Bangla, Assamese and other text in the Bengali script. See [Other scripts](#other-scripts). |

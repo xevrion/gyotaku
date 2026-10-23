@@ -2,7 +2,6 @@
 //! own shortcut to summon it, and the watcher as a systemd user service or an
 //! XDG autostart entry.
 
-use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -128,12 +127,28 @@ pub fn take_focus(_: &mut Window) {}
 
 /// Nothing to register: the desktop's own shortcut runs `gyotaku-app`, and
 /// that knocks on the running copy.
-pub fn register_summon(_: UnboundedSender<()>, _: &BTreeMap<String, String>, _: &mut App) {}
+pub fn register_summon(_: UnboundedSender<()>, _: &str, _: &mut App) -> Result<(), &'static str> {
+    Ok(())
+}
+
+/// The desktop owns the summon key, so it can't be changed here.
+pub fn summon_rebindable() -> bool {
+    false
+}
+
+/// Unused on Linux, but must be present so `mod.rs` can re-export it.
+pub const SUMMON_DEFAULT: &str = "";
+
+/// Nothing to update on Linux: there is no tray icon.
+pub fn update_summon(_: &str, _: &mut App) {}
+
+/// Nothing to update here either, for the same reason.
+pub fn update_paused(_: bool, _: &mut App) {}
 
 /// Nothing shows while it waits: there's no Dock or taskbar button to hide,
 /// and the desktop's shortcut is the way back in. A tray icon would need a
 /// StatusNotifier host most Wayland desktops don't run.
-pub fn settle_in(_: UnboundedSender<TrayCommand>, _: &BTreeMap<String, String>, _: &mut App) {}
+pub fn settle_in(_: UnboundedSender<TrayCommand>, _: &gyotaku_core::Config, _: &mut App) {}
 
 /// Nothing to do: the portal's folder picker comes up in front on its own.
 pub fn before_picker(_: &mut App) {}
@@ -464,6 +479,11 @@ fn expand(path: &str, home: &Path) -> PathBuf {
         None if path == "~" => home.to_path_buf(),
         None => PathBuf::from(path.replace("$HOME", &home.to_string_lossy())),
     }
+}
+
+/// Convert the backend's pinch increments to the scale since gesture start.
+pub fn pinch_scale(previous: f32, delta: f32) -> f32 {
+    previous + delta
 }
 
 #[cfg(test)]
