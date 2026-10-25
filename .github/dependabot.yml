@@ -17,6 +17,10 @@ updates:
       # image leak workaround has to be checked against it by hand.
       - dependency-name: gpui
       - dependency-name: gpui_platform
+      # ort is a release candidate pinned exactly, its API changes between
+      # candidates, and the onnxruntime build the app downloads has to
+      # speak the API version it's built for.
+      - dependency-name: ort
     groups:
       minor-and-patch:
         update-types:
