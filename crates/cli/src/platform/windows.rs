@@ -31,9 +31,11 @@ pub fn become_idle() {
 /// The Windows heap gives freed pages back by itself.
 pub fn release_memory() {}
 
-/// ReadDirectoryChangesW reports a buffer overflow as such (a full look
-/// follows), so no timer is needed.
-pub const RESCAN_EVERY: Option<Duration> = None;
+/// ReadDirectoryChangesW overflows when a lot changes at once (a few hundred
+/// photos copied in), and notify passes that on as nothing at all, or stops
+/// watching the folder. So the reader also looks over its folders now and
+/// then, the way it does on macOS.
+pub const RESCAN_EVERY: Option<Duration> = Some(Duration::from_secs(180));
 
 pub fn denied(folder: &str) -> String {
     format!("can't read {folder}, access denied")
