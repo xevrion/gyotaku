@@ -118,9 +118,38 @@ jobs:
           $shots = (Resolve-Path tests\fixtures).Path
           $cfg = Join-Path $env:APPDATA 'gyotaku\config'
           New-Item -ItemType Directory -Force $cfg | Out-Null
-          "folders = ['$shots']`ntheme = 'dark'`nthreads = 2" | Set-Content (Join-Path $cfg 'config.toml')
+          $toml = Join-Path $cfg 'config.toml'
+          # Replaced the way the app saves it, written beside it and renamed over.
+          function Folders($list) {
+            $quoted = ($list | ForEach-Object { "'$_'" }) -join ', '
+            "folders = [$quoted]`ntheme = 'dark'`nthreads = 2" | Set-Content "$toml.tmp"
+            [System.IO.File]::Move("$toml.tmp", $toml, $true)
+          }
+          function Extra($name) {
+            $dir = Join-Path $env:RUNNER_TEMP "$name shots"
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            Copy-Item tests\fixtures\settings.png (Join-Path $dir "$name.png")
+            $dir
+          }
+          function Found($name) {
+            foreach ($i in 1..30) {
+              if ((& .\dist\gyotaku\gyotaku.exe search cores 2>$null) -match "$name\.png") { return $true }
+              Start-Sleep -Seconds 2
+            }
+            $false
+          }
+          Folders @($shots)
 
           Start-Process .\dist\gyotaku\gyotaku-app.exe
+          # A folder added while the reader is still getting ready (the
+          # models download on a first run) is read without a restart.
+          $status = Join-Path $data 'reader.status'
+          foreach ($i in 1..300) {
+            if ((Get-Content $status -ErrorAction SilentlyContinue) -match 'getting the text reader ready') { break }
+            Start-Sleep -Milliseconds 50
+          }
+          $early = Extra 'early'
+          Folders @($shots, $early)
           Start-Sleep -Seconds 2
           Alive; Shot '0-first-run'
           $found = $false
@@ -129,9 +158,16 @@ jobs:
             if ($hits) { $found = $true; break }
             Start-Sleep -Seconds 2
           }
-          Get-Content (Join-Path $data 'reader.status') -ErrorAction SilentlyContinue
+          Get-Content $status -ErrorAction SilentlyContinue
+          if (-not $found) { Get-Content (Join-Path $data 'watch.log'); Shot '0-never-read'; throw 'the app never got the screenshot read' }
+          $readEarly = Found 'early'
+          # And one added once it's caught up.
+          $late = Extra 'late'
+          Folders @($shots, $early, $late)
+          $readLate = Found 'late'
           Get-Content (Join-Path $data 'watch.log') -ErrorAction SilentlyContinue
-          if (-not $found) { Shot '0-never-read'; throw 'the app never got the screenshot read' }
+          if (-not $readEarly) { throw 'a folder added while the reader was starting was never read' }
+          if (-not $readLate) { throw 'a folder added while the reader was running was never read' }
 
           # The window was opened before anything was searchable; summoning
           # it again shows the grid.

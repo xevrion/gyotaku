@@ -196,12 +196,18 @@ pub fn run(fixed: Option<Vec<PathBuf>>, threads: Option<usize>) -> Result<()> {
     let mut said_left = paused.then_some(backlog.len());
     // When the folders were last looked over in full, for RESCAN_EVERY.
     let mut looked = Instant::now();
+    // The config was read before anything was watched, and getting this
+    // far can take minutes (the models download on a first run, a removed
+    // folder's shots are forgotten). A folder added in settings meanwhile
+    // made no event this will ever see, so the config is read once more.
+    let mut read_config_again = follow_config;
 
     loop {
         if platform::RESCAN_EVERY.is_some_and(|every| looked.elapsed() >= every) {
             w.rescan = true;
         }
-        let mut config_changed = false;
+        let mut config_changed = std::mem::take(&mut read_config_again);
+        let reading_it_again = config_changed;
         let mut take = |event: notify::Result<Event>, w: &mut Watch| match event {
             Ok(mut event) => {
                 for path in &mut event.paths {
@@ -224,7 +230,9 @@ pub fn run(fixed: Option<Vec<PathBuf>>, threads: Option<usize>) -> Result<()> {
         };
         // Block for as long as there is nothing else to do.
         let working = !paused && (!backlog.is_empty() || settling);
-        let wait = if !w.pending.is_empty() || !w.leaving.is_empty() {
+        let wait = if reading_it_again {
+            Duration::ZERO
+        } else if !w.pending.is_empty() || !w.leaving.is_empty() {
             SETTLE
         } else if working || !w.arrived.is_empty() || w.rescan {
             // Working through an old library can wait, a laptop's battery
