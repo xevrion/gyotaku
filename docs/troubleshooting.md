@@ -107,7 +107,7 @@ Run `gyotaku ocr path/to/screenshot.png` to see the text gyotaku extracts. If th
 
 ### Text in Hindi, Russian, Korean, Arabic or other scripts is not found
 
-For Hindi, Marathi, Nepali and other Devanagari text, turn on **Read Devanagari** in settings. It applies to screenshots taken from then on; ones read before keep their text as it was read. The other scripts are not supported yet. See [Compatibility](compatibility.md#language-support).
+For Hindi, Marathi, Nepali and other Devanagari text, turn on **Read Devanagari** in settings. It applies to screenshots taken from then on; ones read before keep their text as it was read. For Bangla and Assamese, turn on **Read Bengali** the same way. The other scripts are not supported yet. See [Compatibility](compatibility.md#language-support).
 
 ### Rotated or vertical text is not found
 
