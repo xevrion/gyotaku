@@ -2648,7 +2648,7 @@ checksum = "b40ca9252762c466af32d0b1002e91e4e1bc5398f77455e55474deb466355ff5"
 
 [[package]]
 name = "gyotaku"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "clap",
@@ -2667,7 +2667,7 @@ dependencies = [
 
 [[package]]
 name = "gyotaku-app"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "directories",
@@ -2693,7 +2693,7 @@ dependencies = [
 
 [[package]]
 name = "gyotaku-core"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "directories",
@@ -2709,7 +2709,7 @@ dependencies = [
 
 [[package]]
 name = "gyotaku-ocr"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "fast_image_resize",
