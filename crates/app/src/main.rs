@@ -227,7 +227,10 @@ fn tray(command: platform::TrayCommand, cx: &mut App) {
                 }
             }
         },
-        platform::TrayCommand::Quit => cx.quit(),
+        platform::TrayCommand::Quit => {
+            platform::stop_reader();
+            cx.quit();
+        }
     }
 }
 

@@ -45,3 +45,18 @@ pub fn reader_running() -> bool {
     };
     matches!(lock.try_lock(), Err(std::fs::TryLockError::WouldBlock))
 }
+
+/// The running reader's process id, which it writes down once it holds the
+/// lock. None while no reader runs, so the id one that's gone left behind
+/// never names some other process.
+pub fn reader_pid() -> Option<u32> {
+    if !reader_running() {
+        return None;
+    }
+    let dir = crate::data_dir().ok()?;
+    std::fs::read_to_string(dir.join("watch.pid"))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}

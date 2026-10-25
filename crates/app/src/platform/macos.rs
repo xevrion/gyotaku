@@ -375,6 +375,28 @@ pub fn keep_reading() {
     std::thread::spawn(start_reader);
 }
 
+/// Quit from the menu bar means all of gyotaku: the reader was started by
+/// the app, and opening gyotaku again starts it again. `ps` makes sure that
+/// pid is still the reader.
+pub fn stop_reader() {
+    let Some(pid) = gyotaku_core::status::reader_pid() else {
+        return;
+    };
+    let is_reader = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .is_ok_and(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .trim()
+                .ends_with("/gyotaku")
+        });
+    if is_reader && let Ok(pid) = i32::try_from(pid) {
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
+    }
+}
+
 fn start_reader() {
     if gyotaku_core::status::reader_running() {
         return;

@@ -145,6 +145,10 @@ pub fn update_summon(_: &str, _: &mut App) {}
 /// Nothing to update here either, for the same reason.
 pub fn update_paused(_: bool, _: &mut App) {}
 
+/// The reader is a service of its own here, and quitting the window leaves
+/// it reading.
+pub fn stop_reader() {}
+
 /// Nothing shows while it waits: there's no Dock or taskbar button to hide,
 /// and the desktop's shortcut is the way back in. A tray icon would need a
 /// StatusNotifier host most Wayland desktops don't run.

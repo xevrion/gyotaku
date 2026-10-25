@@ -78,7 +78,7 @@ Windows support is a preview. In PowerShell:
 irm https://raw.githubusercontent.com/xevrion/gyotaku/main/install.ps1 | iex
 ```
 
-This installs to `%LOCALAPPDATA%\Programs\gyotaku`, adds gyotaku to the Start menu and opens it. Press **Alt+Shift+S** anywhere to open or close the search window. No administrator rights are needed. Windows 10 and 11 on x64 are supported; ARM64 runs the x64 build through emulation. While it waits, gyotaku sits in the notification area: click its icon to open the window, right-click it for settings or to quit. The window never takes a taskbar button, and Alt+F4 just puts it away.
+This installs to `%LOCALAPPDATA%\Programs\gyotaku`, adds gyotaku to the Start menu and opens it. Press **Alt+Shift+S** anywhere to open or close the search window. No administrator rights are needed. Windows 10 and 11 on x64 are supported; ARM64 runs the x64 build through emulation. While it waits, gyotaku sits in the notification area: click its icon to open the window, right-click it for settings, to pause reading or to quit. Quitting stops the reader as well, until gyotaku is opened again. The window never takes a taskbar button, and Alt+F4 just puts it away.
 
 If you prefer a regular installer, download [`gyotaku-setup-x86_64.exe`](https://github.com/xevrion/gyotaku/releases/latest/download/gyotaku-setup-x86_64.exe) from the latest release and run it. It installs the same files to the same folder, also without administrator rights, and lists gyotaku in Settings > Apps so it can be uninstalled from there. The setup is not code-signed yet, so SmartScreen may warn about an unknown publisher; choose **More info** and then **Run anyway**. The setup and the PowerShell command update each other's installs.
 
@@ -92,7 +92,7 @@ curl -fsSL https://raw.githubusercontent.com/xevrion/gyotaku/main/install.sh | s
 
 The same installer as on Linux: it downloads the release for Apple Silicon Macs, verifies its SHA-256 checksum and installs `gyotaku` and `gyotaku-app` to `~/.local/bin`, with ONNX Runtime beside them. Apple Silicon (arm64) is supported. Microsoft publishes no ONNX Runtime build for Intel macs, so those need a [build from source](#build-from-source) with `ORT_DYLIB_PATH` pointing at an `onnxruntime` library.
 
-It also adds `gyotaku.app` to `~/Applications`, so Spotlight and Launchpad can open it. Like Raycast, it runs without a Dock icon: while it waits it sits in the menu bar, whose menu opens the window or settings and is where it's quit. Cmd+W and Cmd+Q in the window just put it away.
+It also adds `gyotaku.app` to `~/Applications`, so Spotlight and Launchpad can open it. Like Raycast, it runs without a Dock icon: while it waits it sits in the menu bar, whose menu opens the window or settings, pauses reading, and is where it's quit (the reader stops too, until gyotaku is opened again). Cmd+W and Cmd+Q in the window just put it away.
 
 Config, index and models live in `~/Library/Application Support/gyotaku`, thumbnails in `~/Library/Caches/gyotaku`.
 

@@ -587,6 +587,19 @@ pub fn keep_reading() {
     std::thread::spawn(start_reader);
 }
 
+/// Quit means all of gyotaku: the reader was started by the app, and left
+/// running it's a background process only Task Manager can end. Opening
+/// gyotaku again starts it again. The image name filter makes sure that
+/// pid is still the reader.
+pub fn stop_reader() {
+    if let Some(pid) = gyotaku_core::status::reader_pid() {
+        let _ = hidden("taskkill")
+            .args(["/F", "/FI", &format!("PID eq {pid}")])
+            .args(["/FI", "IMAGENAME eq gyotaku.exe"])
+            .status();
+    }
+}
+
 fn start_reader() {
     if gyotaku_core::status::reader_running() {
         return;

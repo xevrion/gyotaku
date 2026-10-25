@@ -99,6 +99,10 @@ pub use imp::{
     background_status, keep_reading, revive_reader, service_status, start_service, stop_service,
 };
 
+// Quitting ends the reader too where the app is what started it (not on
+// Linux, where it's a service).
+pub use imp::stop_reader;
+
 // Where screenshot tools save, and the wording that differs.
 pub use imp::{WORDS, tool_folders};
 

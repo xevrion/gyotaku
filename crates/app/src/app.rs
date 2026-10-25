@@ -1340,6 +1340,7 @@ impl Gyotaku {
     }
 
     fn quit(&mut self, _: &Quit, _: &mut Window, cx: &mut Context<Self>) {
+        platform::stop_reader();
         cx.quit();
     }
 
