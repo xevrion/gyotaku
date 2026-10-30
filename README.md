@@ -30,7 +30,7 @@ All processing happens locally. gyotaku does not take screenshots itself; it ind
 
 gyotaku is free and stays free. If it saves you time, sponsoring keeps it maintained.
 
-[Sponsor on GitHub](https://github.com/sponsors/xevrion) · [Get updates by email](https://gyotaku.app/#updates)
+[Sponsor on GitHub](https://github.com/sponsors/xevrion) · [Buy me a coffee](https://buymeacoffee.com/xevrion) · [Get updates by email](https://gyotaku.app/#updates)
 
 ## Highlights
 
