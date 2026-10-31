@@ -18,8 +18,8 @@ directories.workspace = true
 # Pinned to zed main rather than the 0.2.2 release on crates.io. The release
 # renders through blade, which is Vulkan only. Main moved to wgpu with a GL
 # fallback, so the window still opens on old integrated graphics.
-gpui = { git = "https://github.com/zed-industries/zed", rev = "0fb9a9da49993ee8061ff4a2feaa89966a79e91c" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "0fb9a9da49993ee8061ff4a2feaa89966a79e91c", features = ["font-kit", "wayland", "x11"] }
+gpui = { git = "https://github.com/zed-industries/zed", rev = "0eda7703f6c88aa08a25c1d2105ff1ca46f775d4" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "0eda7703f6c88aa08a25c1d2105ff1ca46f775d4", features = ["font-kit", "wayland", "x11"] }
 env_logger = "0.11"
 futures = "0.3"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
