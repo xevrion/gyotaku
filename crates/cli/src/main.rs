@@ -53,7 +53,7 @@ enum Command {
         boxes: bool,
         #[arg(long, default_value_t = gyotaku_core::default_threads())]
         threads: usize,
-        /// Also read this script, like `--script devanagari` (default: the
+        /// Also read this script, `--script devanagari` or `bengali` (default: the
         /// ones in your config)
         #[arg(long = "script")]
         scripts: Vec<String>,
