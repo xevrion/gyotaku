@@ -126,6 +126,7 @@ Open settings with Ctrl+,.
 | Pause reading | Off by default. Stops reading screenshots, old and new, until it is turned off again; everything already read stays searchable, and screenshots taken meanwhile are read first on resuming. Also in the tray menu on Windows and the menu bar on macOS. Stored as `paused` in the config. |
 | Save copied images | Off by default. Saves every image copied to the clipboard into its own folder, so images that were never saved anywhere become searchable. See [Copied images](#copied-images). |
 | Read Devanagari | Off by default. Also reads Hindi, Marathi, Nepali and other text in Devanagari. See [Other scripts](#other-scripts). |
+| Read Cyrillic | Off by default. Also reads Russian, Ukrainian, Serbian and other text in Cyrillic. See [Other scripts](#other-scripts). |
 | Cores per screenshot | Number of CPU cores used to read a single screenshot. Higher values are faster; lower values leave more capacity for other work. Indexing always runs at idle priority. |
 | Thumbnail cache | Clears cached thumbnails. They are regenerated on demand. |
 | Shortcuts | Lists every keyboard shortcut. Select a command and press Enter, then press the new keys; Escape cancels and Delete restores the default. New keys must include Ctrl, Alt or Super (or be a function key) and must not already be in use. Navigation keys (Escape, Enter, arrows, Page Up and Page Down, Shift+arrows) are fixed. |
@@ -187,19 +188,24 @@ Because only the background indexer watches the clipboard, copied images are sav
 
 ## Other scripts
 
-The default text reader covers Latin, Chinese, Japanese and Greek. With **Read Devanagari** enabled, Hindi, Marathi, Nepali and other text in Devanagari is read too, including lines that mix it with English. In `config.toml` this is:
+The default text reader covers Latin, Chinese, Japanese and Greek. Two more scripts can be turned on in settings. Each also reads lines that mix it with English:
 
-```toml
-scripts = ["devanagari"]
-```
+| Setting | Reads | Model | In `config.toml` |
+|---|---|---|---|
+| Read Devanagari | Hindi, Marathi, Nepali and others | 7.9 MB | `scripts = ["devanagari"]` |
+| Read Cyrillic | Russian, Ukrainian, Belarusian, Serbian, Bulgarian, Kazakh and others | 8.1 MB | `scripts = ["cyrillic"]` |
 
-Enabling it downloads a 7.9 MB model the first time. If the download fails, for example offline, reading continues without it and the status line says so; the next change to the settings tries again.
+Both together are `scripts = ["devanagari", "cyrillic"]`.
+
+Enabling one downloads its model the first time. If the download fails, for example offline, reading continues without it and the status line says so; the next change to the settings tries again.
 
 It applies to screenshots read from then on. Screenshots read before keep the text they were read with, since reading the whole library again would take as long as the first time. To read a particular screenshot again, touch it (`touch path/to/screenshot.png`), and the background indexer picks it up as changed.
 
-Lines that the default reader already read with confidence, and that contain no Devanagari, are never read twice, so the extra cost depends on the screenshot. On 25 screenshots with no Devanagari in them, about a quarter of lines were read a second time. See [Performance](performance.md#other-scripts).
+Lines that the default reader already read with confidence, and that contain none of the script, are never read twice, so the extra cost depends on the screenshot. On 25 screenshots with no Devanagari in them, about a quarter of lines were read a second time. Screenshots with Russian in them take about half as long again with Cyrillic on, those without about a tenth. See [Performance](performance.md#other-scripts).
 
-To check a single image: `gyotaku ocr --script devanagari path/to/screenshot.png`.
+Cyrillic and Latin share letters that look identical (А and A, Р and P), so in a line mixing Russian and English each word is put into one script by the letters only one of them has: "docker compose" stays Latin and "Логи" Cyrillic. A word in capitals made only of letters that look Latin, such as ВЕРХ or АВАТАР, is read by the default reader with full confidence as "BEPX" and "ABATAP", and stays that way.
+
+To check a single image: `gyotaku ocr --script cyrillic path/to/screenshot.png`.
 
 ## Command-line interface
 

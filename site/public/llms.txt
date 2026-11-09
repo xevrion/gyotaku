@@ -12,7 +12,7 @@ gyotaku does not take screenshots. It reads the ones you already save, in the fo
 - Folds bursts of near-identical screenshots into one result
 - Copy a screenshot's text, only the lines you select, or the image
 - Move many screenshots to the system trash at once, with undo
-- Reads English and other Latin-script languages, Chinese, Japanese and vertical text; Hindi, Marathi and Nepali are optional
+- Reads English and other Latin-script languages, Chinese, Japanese and vertical text; Hindi, Marathi and Nepali, and Russian, Ukrainian, Serbian and other Cyrillic languages, are optional
 - Optionally saves images you copy to the clipboard so they become searchable (Linux and Windows)
 - Rebindable keyboard shortcuts, light and dark themes
 - No GPU needed; about 37 MB of memory while waiting, about 30 MB of disk per 1,000 screenshots

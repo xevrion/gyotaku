@@ -27,7 +27,7 @@ const FEATURES = [
   "Folds bursts of near-identical screenshots into one",
   "Copy the text of a whole screenshot or just the lines you select",
   "Move screenshots to the trash in bulk, with undo",
-  "Reads English and other Latin-script languages, Chinese, Japanese and vertical text, with Hindi, Marathi and Nepali optional",
+  "Reads English and other Latin-script languages, Chinese, Japanese and vertical text, with Hindi, Marathi, Nepali, Russian, Ukrainian and other Cyrillic languages optional",
   "Runs fully offline, with no account or telemetry",
 ];
 

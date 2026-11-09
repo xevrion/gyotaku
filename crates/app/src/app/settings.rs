@@ -1627,6 +1627,14 @@ fn script_words(script: Script, on: bool) -> (&'static str, &'static str) {
             "read Devanagari",
             "on for new screenshots, ones read before stay as they were",
         ),
+        (Script::Cyrillic, false) => (
+            "read Cyrillic",
+            "Russian, Ukrainian, Serbian and more, an 8 MB download",
+        ),
+        (Script::Cyrillic, true) => (
+            "read Cyrillic",
+            "on for new screenshots, ones read before stay as they were",
+        ),
     }
 }
 

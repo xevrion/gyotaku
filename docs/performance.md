@@ -76,6 +76,21 @@ Under load the difference disappears into the noise. The extra recognizer is a t
 
 Accuracy on rendered Hindi and Marathi screenshots (chat, payment receipt, settings page, municipal notice, an order page mixing Hindi and English), Noto Sans and Noto Serif Devanagari at 15 to 18 pt: every line was read, at scores of 0.91 to 0.99, where the default reader returned nothing or stray Latin letters. Misreads were in conjuncts and nasal marks, for example "पुणे" read as "पुण" and "रास्ते" as "रासत".
 
+Reading Cyrillic as well (**Read Cyrillic** in settings), on 30 real desktop screenshots: 13 with no Cyrillic in them and 17 with Russian. Measured on a different machine from the rest of this page, an Intel Xeon E5-2670 v2 (10 cores, 20 threads) on EndeavourOS, optimized build, 4 cores, machine under load, three runs interleaved:
+
+| | Default | With Cyrillic |
+|---|---|---|
+| No Cyrillic: median time per screenshot | 279 ms | 346 ms |
+| No Cyrillic: total for the 13 | 9.0 to 9.9 s | 9.7 to 10.3 s (about +8%) |
+| No Cyrillic: lines kept, lines changed | 218 | 218, none changed |
+| Russian: median time per screenshot | 1.3 s | 2.0 s |
+| Russian: total for the 17 | 24.8 to 24.9 s | 36.4 to 37.5 s (about +48%) |
+| Russian: lines kept | 396 | 517, 219 of them read again and now in Cyrillic |
+
+Every line that changed has Cyrillic in it. On rendered English, Greek, Chinese, Japanese, French and German text, only one line changed: a line of Greek capitals, which the default reader already read poorly (0.85), came back as Cyrillic letters (0.96).
+
+Accuracy on rendered screenshots (chat, order page, settings page, a how-to mixing Russian with English commands, a page of Ukrainian, Belarusian, Serbian, Bulgarian, Kazakh and Russian), Noto Sans, Noto Serif and Open Sans at 14 to 17 pt: all but one of 57 lines with Cyrillic in them were read, at scores of 0.94 to 1.00, where the default reader returned digits, punctuation and stray Latin letters. The one missed was "1 шт.", which the default reader took for "1 ωT." at 0.92, too sure to be read again. Misreads were rare, for example a straight quote read as a double prime. The cases still missed are in [Usage](usage.md#other-scripts).
+
 Vertical text costs nothing extra unless a screenshot has some: only boxes at least 1.5 times taller than wide are turned, and on 100 real screenshots the text read was identical with and without it.
 
 ## Search

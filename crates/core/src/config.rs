@@ -79,15 +79,19 @@ impl Default for Config {
 pub enum Script {
     /// Hindi, Marathi, Nepali, Sanskrit and the rest written in it.
     Devanagari,
+    /// Russian, Ukrainian, Belarusian, Serbian, Bulgarian, Kazakh and the
+    /// rest written in it.
+    Cyrillic,
 }
 
 impl Script {
-    pub const ALL: [Script; 1] = [Script::Devanagari];
+    pub const ALL: [Script; 2] = [Script::Devanagari, Script::Cyrillic];
 
     /// The name used in the config.
     pub fn name(self) -> &'static str {
         match self {
             Script::Devanagari => "devanagari",
+            Script::Cyrillic => "cyrillic",
         }
     }
 
@@ -346,11 +350,16 @@ mod tests {
     fn unknown_scripts_are_skipped_but_kept() {
         let path = scratch("scripts");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, "scripts = [\"Devanagari\", \"klingon\"]\n").unwrap();
+        std::fs::write(
+            &path,
+            "scripts = [\"Devanagari\", \"klingon\", \"cyrillic\"]\n",
+        )
+        .unwrap();
         let mut config = Config::load_from(&path).unwrap().unwrap();
-        assert_eq!(config.scripts(), vec![Script::Devanagari]);
+        assert_eq!(config.scripts(), vec![Script::Devanagari, Script::Cyrillic]);
 
         config.set_script(Script::Devanagari, false);
+        config.set_script(Script::Cyrillic, false);
         assert!(config.scripts().is_empty());
         assert_eq!(
             config.scripts,
@@ -361,6 +370,8 @@ mod tests {
         config.set_script(Script::Devanagari, true);
         config.set_script(Script::Devanagari, true);
         assert_eq!(config.scripts(), vec![Script::Devanagari], "never twice");
+        config.set_script(Script::Cyrillic, true);
+        assert_eq!(config.scripts(), vec![Script::Devanagari, Script::Cyrillic]);
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 

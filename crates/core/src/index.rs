@@ -798,6 +798,43 @@ mod tests {
         assert_eq!(hits[0].lines, [line("कल मिलते हैं, शाम 6 बजे", 0.2)]);
     }
 
+    // Lines as the Cyrillic reader gave them back from test screenshots.
+    #[test]
+    fn finds_cyrillic() {
+        let mut idx = Index::open_in_memory().unwrap();
+        idx.insert(
+            &shot("/shots/order.png", 100),
+            &[
+                line("Заказ № 58-301 оформлен", 0.1),
+                line("Наушники Sony WH-1000XM5, чёрные", 0.2),
+                line("Адрес: г. Москва, Ленинский проспект, д. 32, кв. 118", 0.3),
+            ],
+        )
+        .unwrap();
+        idx.insert(
+            &shot("/shots/docs.png", 200),
+            &[
+                line("Логи смотрите командой docker compose logs -f web", 0.1),
+                line("Ґанок старої хати, їжак і щастя в серці.", 0.2),
+                line("Кстати, ёж в холле", 0.3),
+            ],
+        )
+        .unwrap();
+
+        let found = |q: &str| paths(&idx.search(q, 10).unwrap()).join(" ");
+        assert_eq!(found("оформлен"), "/shots/order.png");
+        // Case is folded past ASCII by the trigram index.
+        assert_eq!(found("ЗАКАЗ"), "/shots/order.png");
+        assert_eq!(found("москва"), "/shots/order.png");
+        assert_eq!(found("чёрные"), "/shots/order.png");
+        assert_eq!(found("логи compose"), "/shots/docs.png");
+        assert_eq!(found("їжак"), "/shots/docs.png");
+        // Two characters is under the trigram index, so LIKE.
+        assert_eq!(found("ёж"), "/shots/docs.png");
+        assert_eq!(found("sony наушники"), "/shots/order.png");
+        assert_eq!(found("самовар"), "");
+    }
+
     #[test]
     fn finds_the_middle_of_a_word() {
         let hits = sample().search("nutsmp", 10).unwrap();
