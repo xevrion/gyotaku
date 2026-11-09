@@ -8,8 +8,9 @@
 //! found by typing the word.
 
 /// Cyrillic letters and the Latin ones drawn the same way. Only true twins:
-/// к and k, or п and n, are told apart by any reader.
-const TWINS: [(char, char); 25] = [
+/// к and k, п and n, or a capital У and Y look different enough for any
+/// reader to tell apart.
+const TWINS: [(char, char); 29] = [
     ('А', 'A'),
     ('В', 'B'),
     ('Е', 'E'),
@@ -21,8 +22,9 @@ const TWINS: [(char, char); 25] = [
     ('С', 'C'),
     ('Т', 'T'),
     ('Х', 'X'),
-    ('У', 'Y'),
     ('І', 'I'),
+    ('Ј', 'J'),
+    ('Ѕ', 'S'),
     ('Ё', 'Ë'),
     ('Ї', 'Ï'),
     ('а', 'a'),
@@ -33,6 +35,9 @@ const TWINS: [(char, char); 25] = [
     ('у', 'y'),
     ('х', 'x'),
     ('і', 'i'),
+    ('ј', 'j'),
+    ('ѕ', 's'),
+    ('һ', 'h'),
     ('ё', 'ë'),
     ('ї', 'ï'),
 ];
@@ -51,7 +56,10 @@ fn to_cyrillic(c: char) -> Option<char> {
         .map(|&(cyr, _)| cyr)
 }
 
-fn is_cyrillic(c: char) -> bool {
+/// Cyrillic and Cyrillic Supplement, every letter a living language uses.
+/// The model also knows the Extended blocks, but those are Church Slavonic,
+/// and from a screenshot more likely a misread.
+pub fn is_cyrillic(c: char) -> bool {
     ('\u{0400}'..='\u{052F}').contains(&c)
 }
 
@@ -97,8 +105,8 @@ fn settle(word: &str, out: &mut String) {
 mod tests {
     use super::*;
 
-    // The readings are what the Cyrillic recognizer gave on rendered test
-    // screenshots.
+    // Mixed lines below are what the Cyrillic recognizer gave on rendered test
+    // screenshots; the single words are made up to pin down one rule each.
     #[test]
     fn latin_words_lose_their_cyrillic_twins() {
         assert_eq!(
@@ -124,6 +132,10 @@ mod tests {
         );
         // A Ukrainian і typed with a Latin i.
         assert_eq!(one_script_per_word("цiна"), "ціна");
+        // Serbian ј and Kazakh һ have Latin twins too.
+        assert_eq!(one_script_per_word("љубaј"), "љубај");
+        assert_eq!(one_script_per_word("Jаvа"), "Java");
+        assert_eq!(one_script_per_word("шаhар"), "шаһар");
     }
 
     #[test]
@@ -141,6 +153,8 @@ mod tests {
             "Съешь же ещё этих мягких французских булок, да выпей чаю.",
             "Ґанок старої хати, їжак і щастя в серці.",
             "Љубав, њива, ђак и џеп су обичне речи.",
+            "Београд је главни град Србије, на ушћу Саве у Дунав.",
+            "Астана Қазақстанның астанасы, Есіл өзенінің жағасында.",
             "Pull request #312 merged into main by Alexey Smirnov",
             "Größe: XL · Straße · Übersicht",
         ] {

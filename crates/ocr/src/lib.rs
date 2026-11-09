@@ -122,8 +122,11 @@ impl Ocr {
             let picked: Vec<det::Region> = unsure.iter().map(|&i| regions[i]).collect();
             let again = rec::recognize(&mut extra.session, &extra.alphabet, img, &picked)?;
             for (&i, read) in unsure.iter().zip(again) {
+                // Tidied first, so a line it only made Latin again doesn't
+                // count as having found the script.
+                let read = tidy(extra.script, read);
                 if better(extra.script, &read, &texts[i]) {
-                    texts[i] = tidy(extra.script, read);
+                    texts[i] = read;
                 }
             }
         }
@@ -195,10 +198,7 @@ fn model_for(script: Script) -> &'static models::Model {
 fn in_script(script: Script, c: char) -> bool {
     match script {
         Script::Devanagari => ('\u{0900}'..='\u{097F}').contains(&c),
-        // Cyrillic and Cyrillic Supplement, every letter a living language
-        // uses. The model also knows the Extended blocks, but those are
-        // Church Slavonic, and from a screenshot more likely a misread.
-        Script::Cyrillic => ('\u{0400}'..='\u{052F}').contains(&c),
+        Script::Cyrillic => lookalikes::is_cyrillic(c),
     }
 }
 
@@ -232,11 +232,13 @@ fn better(script: Script, new: &rec::Read, old: &rec::Read) -> bool {
     new.score > old.score && new.text.chars().any(|c| in_script(script, c))
 }
 
-/// Cleans up what an extra recognizer read before it's kept. Devanagari
-/// shares no letters with Latin, so only Cyrillic needs it.
+/// Cleans up what an extra recognizer read before it's weighed against the
+/// first read.
 fn tidy(script: Script, mut read: rec::Read) -> rec::Read {
-    if script == Script::Cyrillic {
-        read.text = lookalikes::one_script_per_word(&read.text);
+    match script {
+        // Shares no letters with Latin, so there's nothing to sort out.
+        Script::Devanagari => {}
+        Script::Cyrillic => read.text = lookalikes::one_script_per_word(&read.text),
     }
     read
 }
@@ -378,7 +380,19 @@ mod tests {
     fn russian_keeps_latin_words_latin() {
         let new = tidy(RUSSIAN, read("Error: соnnеction refused означает", 0.98, 2));
         assert_eq!(new.text, "Error: connection refused означает");
-        // Hindi has no twins to sort out.
+    }
+
+    #[test]
+    fn an_english_line_stays_the_default_readers() {
+        // Made up: surer, with Cyrillic twins in it, but all Latin once
+        // tidied, so it found no Russian.
+        let old = read("conection refused", 0.85, 3);
+        let new = tidy(RUSSIAN, read("соnnеction refused", 0.95, 2));
+        assert!(!better(RUSSIAN, &new, &old));
+    }
+
+    #[test]
+    fn hindi_is_kept_as_read() {
         let new = tidy(HINDI, read("Order #4021 का स्टेटस", 0.975, 2));
         assert_eq!(new.text, "Order #4021 का स्टेटस");
     }

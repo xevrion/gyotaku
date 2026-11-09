@@ -188,7 +188,7 @@ Because only the background indexer watches the clipboard, copied images are sav
 
 ## Other scripts
 
-The default text reader covers Latin, Chinese, Japanese and Greek. Two more scripts can be turned on in settings, each including lines that mix it with English:
+The default text reader covers Latin, Chinese, Japanese and Greek. Two more scripts can be turned on in settings. Each also reads lines that mix it with English:
 
 | Setting | Reads | Model | In `config.toml` |
 |---|---|---|---|

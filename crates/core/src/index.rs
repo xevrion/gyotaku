@@ -816,6 +816,7 @@ mod tests {
             &[
                 line("Логи смотрите командой docker compose logs -f web", 0.1),
                 line("Ґанок старої хати, їжак і щастя в серці.", 0.2),
+                line("Кстати, ёж в холле", 0.3),
             ],
         )
         .unwrap();
@@ -828,6 +829,8 @@ mod tests {
         assert_eq!(found("чёрные"), "/shots/order.png");
         assert_eq!(found("логи compose"), "/shots/docs.png");
         assert_eq!(found("їжак"), "/shots/docs.png");
+        // Two characters is under the trigram index, so LIKE.
+        assert_eq!(found("ёж"), "/shots/docs.png");
         assert_eq!(found("sony наушники"), "/shots/order.png");
         assert_eq!(found("самовар"), "");
     }

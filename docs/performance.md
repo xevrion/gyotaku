@@ -84,7 +84,7 @@ Reading Cyrillic as well (**Read Cyrillic** in settings), on 30 real desktop scr
 | No Cyrillic: total for the 13 | 9.0 to 9.9 s | 9.7 to 10.3 s (about +8%) |
 | No Cyrillic: lines kept, lines changed | 218 | 218, none changed |
 | Russian: median time per screenshot | 1.3 s | 2.0 s |
-| Russian: total for the 17 | 24.8 to 24.9 s | 36.4 to 37.5 s (about +47%) |
+| Russian: total for the 17 | 24.8 to 24.9 s | 36.4 to 37.5 s (about +48%) |
 | Russian: lines kept | 396 | 517, 219 of them read again and now in Cyrillic |
 
 Every line that changed has Cyrillic in it. On rendered English, Greek, Chinese, Japanese, French and German text, only one line changed: a line of Greek capitals, which the default reader already read poorly (0.85), came back as Cyrillic letters (0.96).

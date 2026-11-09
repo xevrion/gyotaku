@@ -49,7 +49,7 @@ export const FAQ: FaqItem[] = [
   },
   {
     q: "Which languages can it read?",
-    text: "English and other Latin-script languages, Chinese and Japanese out of the box, including vertical text. Hindi, Marathi and Nepali can be turned on in settings.",
+    text: "English and other Latin-script languages, Chinese and Japanese out of the box, including vertical text. Hindi, Marathi and Nepali, and Russian, Ukrainian, Serbian and other Cyrillic languages, can be turned on in settings.",
   },
   {
     q: "How do I uninstall it?",
