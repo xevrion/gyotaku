@@ -2,6 +2,7 @@
 //! ONNX Runtime, with the pre and post processing written for this project.
 
 mod det;
+mod lookalikes;
 mod models;
 mod rec;
 
@@ -122,7 +123,7 @@ impl Ocr {
             let again = rec::recognize(&mut extra.session, &extra.alphabet, img, &picked)?;
             for (&i, read) in unsure.iter().zip(again) {
                 if better(extra.script, &read, &texts[i]) {
-                    texts[i] = read;
+                    texts[i] = tidy(extra.script, read);
                 }
             }
         }
@@ -187,12 +188,17 @@ fn covered(rect: &Rect, known: &[Rect]) -> f32 {
 fn model_for(script: Script) -> &'static models::Model {
     match script {
         Script::Devanagari => &models::DEVANAGARI,
+        Script::Cyrillic => &models::CYRILLIC,
     }
 }
 
 fn in_script(script: Script, c: char) -> bool {
     match script {
         Script::Devanagari => ('\u{0900}'..='\u{097F}').contains(&c),
+        // Cyrillic and Cyrillic Supplement, every letter a living language
+        // uses. The model also knows the Extended blocks, but those are
+        // Church Slavonic, and from a screenshot more likely a misread.
+        Script::Cyrillic => ('\u{0400}'..='\u{052F}').contains(&c),
     }
 }
 
@@ -224,6 +230,15 @@ fn second_read(script: Script, read: &rec::Read) -> bool {
 /// "₹1,250.00" came back as "ऱ 1,250.00", and Chinese as stray letters.
 fn better(script: Script, new: &rec::Read, old: &rec::Read) -> bool {
     new.score > old.score && new.text.chars().any(|c| in_script(script, c))
+}
+
+/// Cleans up what an extra recognizer read before it's kept. Devanagari
+/// shares no letters with Latin, so only Cyrillic needs it.
+fn tidy(script: Script, mut read: rec::Read) -> rec::Read {
+    if script == Script::Cyrillic {
+        read.text = lookalikes::one_script_per_word(&read.text);
+    }
+    read
 }
 
 /// UI icons get detected as text and come back as one confident character: a
@@ -346,6 +361,26 @@ mod tests {
         // A stray Devanagari letter, but less sure: the rupee sign stays.
         let old = read("₹1,250.00", 0.943, 5);
         assert!(!better(HINDI, &read("ऱ 1,250.00", 0.888, 5), &old));
+    }
+
+    const RUSSIAN: Script = Script::Cyrillic;
+
+    #[test]
+    fn russian_replaces_what_the_default_reader_made_of_it() {
+        // The default reader keeps the digits and drops every letter.
+        let old = read("3  58-301", 0.97, 12);
+        assert!(second_read(RUSSIAN, &old));
+        let new = read("Заказ № 58-301 оформлен", 0.996, 2);
+        assert!(better(RUSSIAN, &new, &old));
+    }
+
+    #[test]
+    fn russian_keeps_latin_words_latin() {
+        let new = tidy(RUSSIAN, read("Error: соnnеction refused означает", 0.98, 2));
+        assert_eq!(new.text, "Error: connection refused означает");
+        // Hindi has no twins to sort out.
+        let new = tidy(HINDI, read("Order #4021 का स्टेटस", 0.975, 2));
+        assert_eq!(new.text, "Order #4021 का स्टेटस");
     }
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {

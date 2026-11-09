@@ -92,6 +92,18 @@ pub const DEVANAGARI: Model = Model {
     sha256: "d6f0a906580e3fa6b324a318718f1f31f268b6ea8ef985f91c2012a37f52c91e",
 };
 
+// PP-OCRv5's again, for the same reason. Of its two Cyrillic recognizers this
+// is the broad one: 242 Cyrillic letters, enough for Serbian, Kazakh and the
+// rest, where the East Slavic one stops at Russian, Ukrainian and Belarusian.
+// Latin letters, digits and punctuation are in it too.
+pub const CYRILLIC: Model = Model {
+    file: "cyrillic_PP-OCRv5_rec_mobile.onnx",
+    urls: &[
+        "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv5/rec/cyrillic_PP-OCRv5_rec_mobile.onnx",
+    ],
+    sha256: "90f761b4bfcce0c8c561c0cb5c887b0971d3ec01c32164bdf7374a35b0982711",
+};
+
 /// ONNX Runtime itself: Microsoft's official build, fetched on first use like
 /// the models. The Linux one is built against glibc 2.27 and GCC 5's
 /// libstdc++, so it loads on anything from Ubuntu 18.04 and Debian 10 on. The

@@ -71,7 +71,8 @@ The recognition model's character set contains approximately 18,700 characters c
 | Latin (English) | Verified |
 | Chinese, Japanese | Supported by the model, not yet verified |
 | Devanagari (Hindi, Marathi, Nepali and others) | Opt-in with **Read Devanagari** in settings, an extra 7.9 MB model. Verified on rendered Hindi and Marathi text, including lines mixing Hindi and English |
-| Cyrillic, Hangul, Arabic, Hebrew, Thai and others | Not supported |
+| Cyrillic (Russian, Ukrainian, Belarusian, Serbian, Bulgarian, Kazakh and others) | Opt-in with **Read Cyrillic** in settings, an extra 8.1 MB model. Verified on rendered text in those six languages, on lines mixing Russian and English, and on real Russian screenshots, photos and memes. Words in capitals made only of letters that look Latin, such as ВЕРХ or АВАТАР, are still read as Latin |
+| Hangul, Arabic, Hebrew, Thai and others | Not supported |
 
 Horizontal lines and vertical columns are read: columns of Japanese or Chinese, and labels turned 90 degrees either way, such as chart axes. Text at other angles is not.
 
