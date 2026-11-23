@@ -151,16 +151,14 @@ impl NameOptions {
         let mut opts = Self::default();
 
         // 1. Check custom JSON path, or fallback to ./config.json if it exists.
-        let json_path = custom_json_path
-            .map(|p| p.to_path_buf())
-            .or_else(|| {
-                let candidate = PathBuf::from("config.json");
-                if candidate.exists() {
-                    Some(candidate)
-                } else {
-                    None
-                }
-            });
+        let json_path = custom_json_path.map(|p| p.to_path_buf()).or_else(|| {
+            let candidate = PathBuf::from("config.json");
+            if candidate.exists() {
+                Some(candidate)
+            } else {
+                None
+            }
+        });
 
         if let Some(path) = json_path
             && let Ok(contents) = std::fs::read_to_string(&path)
@@ -364,10 +362,16 @@ pub fn classify_nature(lines: &[Line]) -> InfographicNature {
         combined_text.push_str(&line.text.to_lowercase());
     }
 
-    if COMPARISON_KEYWORDS.iter().any(|k| combined_text.contains(k)) {
+    if COMPARISON_KEYWORDS
+        .iter()
+        .any(|k| combined_text.contains(k))
+    {
         return InfographicNature::Comparison;
     }
-    if CHEAT_SHEET_KEYWORDS.iter().any(|k| combined_text.contains(k)) {
+    if CHEAT_SHEET_KEYWORDS
+        .iter()
+        .any(|k| combined_text.contains(k))
+    {
         return InfographicNature::CheatSheet;
     }
     if TIMELINE_KEYWORDS.iter().any(|k| combined_text.contains(k)) {
@@ -821,9 +825,11 @@ pub fn plan_rename(
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
-                jiff::Timestamp::from_second(dur as i64)
-                    .ok()
-                    .map(|ts| ts.to_zoned(jiff::tz::TimeZone::system()).strftime("%Y-%m-%d").to_string())
+                jiff::Timestamp::from_second(dur as i64).ok().map(|ts| {
+                    ts.to_zoned(jiff::tz::TimeZone::system())
+                        .strftime("%Y-%m-%d")
+                        .to_string()
+                })
             })
     } else {
         None
@@ -860,16 +866,10 @@ mod tests {
         let nature = InfographicNature::Comparison;
 
         let snake = slugify(nature, title, None, CaseStyle::Snake, 50);
-        assert_eq!(
-            snake,
-            "comparison_docker_vs_podman_fast_container_engines"
-        );
+        assert_eq!(snake, "comparison_docker_vs_podman_fast_container_engines");
 
         let kebab = slugify(nature, title, None, CaseStyle::Kebab, 50);
-        assert_eq!(
-            kebab,
-            "comparison-docker-vs-podman-fast-container-engines"
-        );
+        assert_eq!(kebab, "comparison-docker-vs-podman-fast-container-engines");
 
         let title_case = slugify(nature, title, None, CaseStyle::Title, 50);
         assert_eq!(
@@ -1023,12 +1023,22 @@ mod tests {
         let corrupt_lines = vec![
             Line {
                 text: "   ".to_string(),
-                rect: Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 0.0,
+                    h: 0.0,
+                },
                 score: 0.0,
             },
             Line {
                 text: "!@#$".to_string(),
-                rect: Rect { x: 0.01, y: 0.01, w: 0.05, h: 0.05 },
+                rect: Rect {
+                    x: 0.01,
+                    y: 0.01,
+                    w: 0.05,
+                    h: 0.05,
+                },
                 score: 0.3,
             },
         ];

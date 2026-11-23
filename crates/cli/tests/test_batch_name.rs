@@ -76,7 +76,10 @@ fn test_batch_name_dry_run_leaves_files_untouched() {
     assert!(output.status.success(), "dry-run should succeed");
 
     // Verify original file was NOT renamed or deleted
-    assert!(test_file.exists(), "original file must still exist untouched in dry-run");
+    assert!(
+        test_file.exists(),
+        "original file must still exist untouched in dry-run"
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("test_settings_input.png"), "{stdout}");
@@ -108,7 +111,10 @@ fn test_batch_name_csv_format() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "failed: {stderr}");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("source_path,recommended_filename,confidence,nature,data_gaps"), "{stdout}");
+    assert!(
+        stdout.contains("source_path,recommended_filename,confidence,nature,data_gaps"),
+        "{stdout}"
+    );
     assert!(stdout.contains("cheat_sheet_modern_git"), "{stdout}");
 
     let _ = fs::remove_dir_all(&temp_dir);
@@ -172,7 +178,10 @@ fn test_batch_name_apply_renames_with_yes_flag() {
 
     // Original file should now be gone, and new file should exist!
     let expected_target = temp_dir.join("architecture_clean_architecture_in_rust.png");
-    assert!(!original_file.exists(), "original file should have been moved");
+    assert!(
+        !original_file.exists(),
+        "original file should have been moved"
+    );
     assert!(expected_target.exists(), "new renamed file must exist");
 
     let _ = fs::remove_dir_all(&temp_dir);

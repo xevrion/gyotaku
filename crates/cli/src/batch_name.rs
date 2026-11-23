@@ -249,10 +249,7 @@ pub fn run(opts: BatchRunOptions) -> Result<()> {
             if !io::stdin().is_terminal() {
                 bail!("--apply requires terminal confirmation or the -y/--yes flag");
             }
-            print!(
-                "\nProceed with renaming {} files? [y/N]: ",
-                plans.len()
-            );
+            print!("\nProceed with renaming {} files? [y/N]: ", plans.len());
             io::stdout().flush()?;
             let mut input = String::new();
             io::stdin().read_line(&mut input)?;
@@ -284,7 +281,10 @@ pub fn run(opts: BatchRunOptions) -> Result<()> {
 }
 
 fn print_table(plans: &[PlannedRename], elapsed: std::time::Duration, dry_run: bool) {
-    println!("{:<45} {:<42} {:<12} {:<14}", "Source", "Recommended Name", "Confidence", "Nature");
+    println!(
+        "{:<45} {:<42} {:<12} {:<14}",
+        "Source", "Recommended Name", "Confidence", "Nature"
+    );
     println!("{}", "-".repeat(115));
 
     for p in plans {
