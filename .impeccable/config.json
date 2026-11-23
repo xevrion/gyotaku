@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "docs/batch-rename-mockup.html"
+        ],
+        "createdAt": "2026-11-23T20:58:05.381Z",
+        "reason": "Intentional full-bleed header, footer, and table rows; all text is inset within those child elements"
+      }
+    ]
+  }
+}

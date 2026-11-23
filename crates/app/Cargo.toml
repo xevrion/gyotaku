@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 gyotaku-core.workspace = true
+gyotaku-ocr.workspace = true
 anyhow.workspace = true
 directories.workspace = true
 # Pinned to zed main rather than the 0.2.2 release on crates.io. The release

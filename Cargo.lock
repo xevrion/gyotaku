@@ -2681,6 +2681,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "gyotaku-core",
+ "gyotaku-ocr",
  "image",
  "jiff",
  "libc",

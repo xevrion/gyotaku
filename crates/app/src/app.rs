@@ -1,3 +1,4 @@
+mod naming;
 mod settings;
 
 use std::cell::RefCell;
@@ -26,6 +27,7 @@ use crate::platform;
 use crate::spring::Spring;
 use crate::stats::FrameStats;
 use crate::theme::Theme;
+use naming::Naming;
 use settings::{Key, Onboarding, Settings};
 
 actions!(
@@ -235,6 +237,7 @@ struct Binned {
 
 enum Page {
     Search,
+    Naming(Naming),
     Settings(Settings),
     Onboarding(Onboarding),
 }
@@ -1192,7 +1195,7 @@ impl Gyotaku {
     /// Its own key in onboarding and settings, so enter is always free to
     /// mean "continue" there, wherever the mouse happens to rest.
     fn add_folder(&mut self, _: &AddFolder, window: &mut Window, cx: &mut Context<Self>) {
-        if self.on_panel() {
+        if matches!(self.page, Page::Settings(_) | Page::Onboarding(_)) {
             self.add_folders(window, cx);
         }
     }
@@ -1945,6 +1948,22 @@ impl Gyotaku {
             )
             .children(reading)
             .child(div().text_sm().text_color(theme.muted).child(count))
+            .child(
+                div()
+                    .id("name-images")
+                    .px_2()
+                    .py_1()
+                    .rounded(px(6.))
+                    .cursor(CursorStyle::PointingHand)
+                    .hover(move |s| s.bg(theme.hover_wash))
+                    .text_sm()
+                    .child("name images")
+                    .on_click(
+                        cx.listener(|this, _: &ClickEvent, window, cx| {
+                            this.open_naming(window, cx)
+                        }),
+                    ),
+            )
             .child(button(
                 "settings-hint",
                 keys::shown("settings", cx),
@@ -2590,7 +2609,7 @@ impl Focusable for Gyotaku {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
         match self.page {
             Page::Search => self.input.focus_handle(cx),
-            Page::Settings(_) | Page::Onboarding(_) => self.panel_focus.clone(),
+            Page::Naming(_) | Page::Settings(_) | Page::Onboarding(_) => self.panel_focus.clone(),
         }
     }
 }
@@ -2625,6 +2644,7 @@ impl Render for Gyotaku {
 
         let toast = self.render_toast(theme, cx);
         let mut content: Vec<AnyElement> = match self.page {
+            Page::Naming(_) => vec![self.render_naming(theme, window, cx)],
             Page::Settings(_) => vec![self.render_settings(theme, window, cx)],
             Page::Onboarding(_) => vec![self.render_onboarding(theme, cx)],
             Page::Search => {

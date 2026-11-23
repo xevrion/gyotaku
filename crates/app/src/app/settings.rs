@@ -253,7 +253,7 @@ impl Gyotaku {
         // click, somewhere else. That's a change of mind.
         self.stop_recording(cx);
         match &mut self.page {
-            Page::Search => {}
+            Page::Search | Page::Naming(_) => {}
             Page::Settings(s) => {
                 let rows = s.rows();
                 let row = rows.get(s.cursor).copied();
@@ -381,6 +381,7 @@ impl Gyotaku {
             // Nothing to go back to before the first step, so it just hides,
             // and the next summon lands here again.
             Page::Onboarding(_) => window.remove_window(),
+            Page::Naming(_) => self.leave_panel(window, cx),
             Page::Settings(_) => self.leave_panel(window, cx),
             Page::Search => {}
         }
@@ -834,7 +835,7 @@ impl Gyotaku {
                 self.save(config, cx);
                 self.flash("added, the watcher starts reading it now", cx);
             }
-            Page::Search => {}
+            Page::Search | Page::Naming(_) => {}
         }
         cx.notify();
     }
@@ -850,7 +851,7 @@ impl Gyotaku {
                 }
                 &mut o.cursor
             }
-            Page::Search => return,
+            Page::Search | Page::Naming(_) => return,
         };
         if *cursor != at {
             *cursor = at;
