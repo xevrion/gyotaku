@@ -152,8 +152,8 @@ fn test_batch_name_script_format() {
 }
 
 #[test]
-fn test_batch_name_apply_renames_with_yes_flag() {
-    let temp_dir = std::env::temp_dir().join("gyotaku_apply_test");
+fn test_batch_name_apply_copies_by_default_preserving_original() {
+    let temp_dir = std::env::temp_dir().join("gyotaku_apply_copy_test");
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 
@@ -174,15 +174,79 @@ fn test_batch_name_apply_renames_with_yes_flag() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "failed: {stderr}");
     let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Successfully copied 1 files"), "{stdout}");
+
+    // Original file must be preserved intact per AGENTS.md, and new copy must exist!
+    let expected_target = temp_dir.join("architecture_clean_architecture_in_rust.png");
+    assert!(
+        original_file.exists(),
+        "original file must remain untouched when copying"
+    );
+    assert!(expected_target.exists(), "new copy must exist");
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_batch_name_apply_action_move() {
+    let temp_dir = std::env::temp_dir().join("gyotaku_apply_move_test");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    let fixture = fixture_path();
+    let original_file = temp_dir.join("original_diagram.png");
+    fs::copy(&fixture, &original_file).expect("copy fixture");
+
+    seed_index_for_file(&original_file, "Clean Architecture in Rust");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_gyotaku"))
+        .arg("name")
+        .arg(&original_file)
+        .arg("--apply")
+        .arg("--action")
+        .arg("move")
+        .arg("-y")
+        .output()
+        .expect("execute gyotaku name --apply --action move -y");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "failed: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Successfully renamed 1 files"), "{stdout}");
 
-    // Original file should now be gone, and new file should exist!
     let expected_target = temp_dir.join("architecture_clean_architecture_in_rust.png");
     assert!(
         !original_file.exists(),
         "original file should have been moved"
     );
     assert!(expected_target.exists(), "new renamed file must exist");
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_batch_name_fallback_error_fails() {
+    let temp_dir = std::env::temp_dir().join("gyotaku_fallback_error_test");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    let fixture = fixture_path();
+    let test_file = temp_dir.join("unindexed_image.png");
+    fs::copy(&fixture, &test_file).expect("copy fixture");
+
+    // Do NOT seed the index. Running with --fallback error should fail closed.
+    let output = Command::new(env!("CARGO_BIN_EXE_gyotaku"))
+        .arg("name")
+        .arg(&test_file)
+        .arg("--fallback")
+        .arg("error")
+        .output()
+        .expect("execute gyotaku name --fallback error");
+
+    assert!(
+        !output.status.success(),
+        "--fallback error must exit with failure code on unreadable or low confidence images"
+    );
 
     let _ = fs::remove_dir_all(&temp_dir);
 }

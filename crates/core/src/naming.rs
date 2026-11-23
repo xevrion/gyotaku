@@ -708,6 +708,18 @@ pub fn resolve_collision(
     case_style: CaseStyle,
     used_names: &mut HashSet<String>,
 ) -> String {
+    resolve_collision_with_disk(None, base_name, ext, case_style, used_names)
+}
+
+/// Resolves duplicate recommended filenames in a batch, checking both in-memory batch reservations
+/// and whether a conflicting file already exists on disk in the target directory.
+pub fn resolve_collision_with_disk(
+    parent: Option<&Path>,
+    base_name: &str,
+    ext: &str,
+    case_style: CaseStyle,
+    used_names: &mut HashSet<String>,
+) -> String {
     let delim = match case_style {
         CaseStyle::Snake => "_",
         CaseStyle::Kebab => "-",
@@ -721,7 +733,15 @@ pub fn resolve_collision(
         format!("{base_name}.{ext}")
     };
 
-    if !used_names.contains(&initial.to_ascii_lowercase()) {
+    let exists_on_disk = |name: &str| -> bool {
+        if let Some(dir) = parent {
+            dir.join(name).exists()
+        } else {
+            false
+        }
+    };
+
+    if !used_names.contains(&initial.to_ascii_lowercase()) && !exists_on_disk(&initial) {
         used_names.insert(initial.to_ascii_lowercase());
         return initial;
     }
@@ -734,7 +754,7 @@ pub fn resolve_collision(
             format!("{base_name}{delim}{counter}.{ext}")
         };
 
-        if !used_names.contains(&candidate.to_ascii_lowercase()) {
+        if !used_names.contains(&candidate.to_ascii_lowercase()) && !exists_on_disk(&candidate) {
             used_names.insert(candidate.to_ascii_lowercase());
             return candidate;
         }
@@ -794,7 +814,17 @@ pub fn plan_rename(
             data_gaps.push("no_high_confidence_title".to_string());
             match options.fallback {
                 FallbackStrategy::Skip => return None,
-                _ => TitleCandidate {
+                FallbackStrategy::Error => {
+                    return Some(PlannedRename {
+                        source_path: path.to_path_buf(),
+                        recommended_filename: String::new(),
+                        target_path: path.to_path_buf(),
+                        confidence: 0.0,
+                        nature: InfographicNature::Standard.as_str().to_string(),
+                        data_gaps,
+                    });
+                }
+                FallbackStrategy::Keep => TitleCandidate {
                     raw_text: "untitled".to_string(),
                     confidence: 0.0,
                     bounding_box: Rect {
@@ -843,7 +873,13 @@ pub fn plan_rename(
         options.max_length,
     );
 
-    let final_filename = resolve_collision(&base_slug, &ext, options.case_style, used_names);
+    let final_filename = resolve_collision_with_disk(
+        path.parent(),
+        &base_slug,
+        &ext,
+        options.case_style,
+        used_names,
+    );
     let target_path = path.with_file_name(&final_filename);
 
     Some(PlannedRename {
@@ -1058,5 +1094,29 @@ mod tests {
         let plan = plan_rename(&path, &[], &options, &mut used).expect("should return keep plan");
         assert_eq!(plan.data_gaps, vec!["no_text_detected".to_string()]);
         assert_eq!(plan.recommended_filename, "screenshot_123.png");
+    }
+
+    #[test]
+    fn test_collision_resolution_with_disk() {
+        let temp_dir = std::env::temp_dir().join("gyotaku_disk_collision_test");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create overview.png on disk
+        let disk_file = temp_dir.join("overview.png");
+        std::fs::write(&disk_file, b"dummy").unwrap();
+
+        let mut used = HashSet::new();
+        // Even though `used` is empty, overview.png exists on disk, so it must return overview_2.png
+        let name = resolve_collision_with_disk(
+            Some(&temp_dir),
+            "overview",
+            "png",
+            CaseStyle::Snake,
+            &mut used,
+        );
+        assert_eq!(name, "overview_2.png");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

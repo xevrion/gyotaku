@@ -70,6 +70,9 @@ enum Command {
         /// Execute renames on disk
         #[arg(long)]
         apply: bool,
+        /// Action to perform when --apply is set (copy preserves originals per AGENTS.md, move moves non-screenshot files)
+        #[arg(long, value_enum, default_value_t = batch_name::ApplyAction::Copy)]
+        action: batch_name::ApplyAction,
         /// Skip confirmation prompt when applying renames
         #[arg(short = 'y', long)]
         yes: bool,
@@ -169,6 +172,7 @@ fn main() -> Result<()> {
             paths,
             dry_run,
             apply,
+            action,
             yes,
             format,
             case,
@@ -182,6 +186,7 @@ fn main() -> Result<()> {
                 paths,
                 dry_run: !apply || dry_run,
                 apply,
+                action,
                 yes,
                 format,
                 case,

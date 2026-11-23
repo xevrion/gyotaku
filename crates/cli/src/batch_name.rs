@@ -58,10 +58,20 @@ impl From<FallbackArg> for FallbackStrategy {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum ApplyAction {
+    /// Copy file to target path, leaving the original screenshot untouched (default, obeys AGENTS.md)
+    #[default]
+    Copy,
+    /// Move file to target path (refused if file is inside a watched screenshots folder)
+    Move,
+}
+
 pub struct BatchRunOptions {
     pub paths: Vec<PathBuf>,
     pub dry_run: bool,
     pub apply: bool,
+    pub action: ApplyAction,
     pub yes: bool,
     pub format: OutputFormat,
     pub case: CaseStyleArg,
@@ -195,13 +205,33 @@ pub fn run(opts: BatchRunOptions) -> Result<()> {
         ) {
             Ok(lines) => lines,
             Err(e) => {
+                if opts.fallback == FallbackArg::Error {
+                    bail!("could not read {}: {:#}", path.display(), e);
+                }
                 eprintln!("warning: could not read {}: {:#}", path.display(), e);
                 Vec::new()
             }
         };
 
-        if let Some(plan) = plan_rename(path, &lines, &name_options, &mut used_names) {
-            plans.push(plan);
+        match plan_rename(path, &lines, &name_options, &mut used_names) {
+            Some(plan) => {
+                if opts.fallback == FallbackArg::Error && !plan.data_gaps.is_empty() {
+                    bail!(
+                        "failed to extract title for {}: {}",
+                        path.display(),
+                        plan.data_gaps.join(", ")
+                    );
+                }
+                plans.push(plan);
+            }
+            None => {
+                if opts.fallback == FallbackArg::Error {
+                    bail!(
+                        "failed to extract title for {} and --fallback error was specified",
+                        path.display()
+                    );
+                }
+            }
         }
     }
 
@@ -249,7 +279,15 @@ pub fn run(opts: BatchRunOptions) -> Result<()> {
             if !io::stdin().is_terminal() {
                 bail!("--apply requires terminal confirmation or the -y/--yes flag");
             }
-            print!("\nProceed with renaming {} files? [y/N]: ", plans.len());
+            let action_verb = match opts.action {
+                ApplyAction::Copy => "copying",
+                ApplyAction::Move => "renaming",
+            };
+            print!(
+                "\nProceed with {} {} files? [y/N]: ",
+                action_verb,
+                plans.len()
+            );
             io::stdout().flush()?;
             let mut input = String::new();
             io::stdin().read_line(&mut input)?;
@@ -259,22 +297,64 @@ pub fn run(opts: BatchRunOptions) -> Result<()> {
             }
         }
 
+        let reading_folders = config.reading_folders();
         let mut success_count = 0;
         for plan in &plans {
             if plan.source_path != plan.target_path {
-                if let Err(e) = fs::rename(&plan.source_path, &plan.target_path) {
+                // Safeguard 1: Do not overwrite an existing file on disk
+                if plan.target_path.exists() {
                     eprintln!(
-                        "error renaming {} to {}: {:#}",
-                        plan.source_path.display(),
-                        plan.target_path.display(),
-                        e
+                        "error: target already exists: {}; skipping to prevent overwrite",
+                        plan.target_path.display()
                     );
-                } else {
-                    success_count += 1;
+                    continue;
+                }
+
+                match opts.action {
+                    ApplyAction::Copy => {
+                        if let Err(e) = fs::copy(&plan.source_path, &plan.target_path) {
+                            eprintln!(
+                                "error copying {} to {}: {:#}",
+                                plan.source_path.display(),
+                                plan.target_path.display(),
+                                e
+                            );
+                        } else {
+                            success_count += 1;
+                        }
+                    }
+                    ApplyAction::Move => {
+                        // Safeguard 2 (AGENTS.md rule): Never move user screenshots in watched folders
+                        let in_screenshot_folder = reading_folders
+                            .iter()
+                            .any(|f| plan.source_path.starts_with(f));
+                        if in_screenshot_folder {
+                            eprintln!(
+                                "error: cannot move user screenshot {} (per AGENTS.md rule: user screenshots are read-only; use --action copy or the generated script)",
+                                plan.source_path.display()
+                            );
+                            continue;
+                        }
+
+                        if let Err(e) = fs::rename(&plan.source_path, &plan.target_path) {
+                            eprintln!(
+                                "error renaming {} to {}: {:#}",
+                                plan.source_path.display(),
+                                plan.target_path.display(),
+                                e
+                            );
+                        } else {
+                            success_count += 1;
+                        }
+                    }
                 }
             }
         }
-        println!("\nSuccessfully renamed {success_count} files.");
+        let action_past = match opts.action {
+            ApplyAction::Copy => "copied",
+            ApplyAction::Move => "renamed",
+        };
+        println!("\nSuccessfully {action_past} {success_count} files.");
     }
 
     Ok(())
@@ -333,6 +413,15 @@ fn print_table(plans: &[PlannedRename], elapsed: std::time::Duration, dry_run: b
     }
 }
 
+fn quote_ps(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "''"))
+}
+
+#[cfg(not(windows))]
+fn quote_sh(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 fn print_script(plans: &[PlannedRename]) {
     #[cfg(windows)]
     {
@@ -340,10 +429,11 @@ fn print_script(plans: &[PlannedRename]) {
         println!("$ErrorActionPreference = 'Stop'\n");
         for p in plans {
             if p.source_path != p.target_path {
+                let src_q = quote_ps(&p.source_path.to_string_lossy());
+                let target_q = quote_ps(&p.target_path.to_string_lossy());
+                let new_name_q = quote_ps(&p.recommended_filename);
                 println!(
-                    "Rename-Item -LiteralPath \"{}\" -NewName \"{}\"",
-                    p.source_path.display(),
-                    p.recommended_filename
+                    "if (Test-Path -LiteralPath {target_q}) {{\n    Write-Error (\"Target already exists: \" + {target_q})\n}} else {{\n    Rename-Item -LiteralPath {src_q} -NewName {new_name_q}\n}}"
                 );
             }
         }
@@ -356,10 +446,10 @@ fn print_script(plans: &[PlannedRename]) {
         println!("set -e\n");
         for p in plans {
             if p.source_path != p.target_path {
+                let src_q = quote_sh(&p.source_path.to_string_lossy());
+                let target_q = quote_sh(&p.target_path.to_string_lossy());
                 println!(
-                    "mv -- \"{}\" \"{}\"",
-                    p.source_path.display(),
-                    p.target_path.display()
+                    "if [ -e {target_q} ]; then\n    echo \"Target already exists: \"{target_q} >&2\n    exit 1\nfi\nmv -n -- {src_q} {target_q}"
                 );
             }
         }
