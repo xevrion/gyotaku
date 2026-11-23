@@ -170,6 +170,22 @@ impl Index {
         Ok(found.is_some())
     }
 
+    /// Returns the cached OCR lines if this path is already indexed with the same mtime.
+    pub fn lines_for_path(&self, path: &Path, mtime: i64) -> Result<Option<Vec<Line>>> {
+        let shot_id: Option<i64> = self
+            .db
+            .query_row(
+                "SELECT id FROM shots WHERE path = ?1 AND mtime = ?2",
+                params![path_str(path), mtime],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(id) = shot_id else {
+            return Ok(None);
+        };
+        self.lines(id).map(Some)
+    }
+
     /// Whether this path is indexed as a real, showable screenshot.
     pub fn is_visible(&self, path: &Path) -> Result<bool> {
         let found = self
