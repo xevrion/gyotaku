@@ -1,18 +1,18 @@
 //! Review selected image names before changing any files.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use gpui::{
-    AnyElement, ClickEvent, Context, CursorStyle, Entity, ListAlignment, ListState,
+    AnyElement, ClickEvent, Context, CursorStyle, Entity, Focusable, ListAlignment, ListState,
     PathPromptOptions, Window, div, list, prelude::*, px,
 };
 use gyotaku_core::naming::{files_have_same_content, plan_rename, rename_no_overwrite};
 use gyotaku_core::{Config, Index, NameOptions, PlannedRename};
 use gyotaku_ocr::Ocr;
 
-use super::{Gyotaku, Page};
+use super::{Gyotaku, Page, settings::Key};
 use crate::input::{Changed, TextInput};
 use crate::platform;
 use crate::theme::Theme;
@@ -31,9 +31,18 @@ pub(super) struct Naming {
     rows: Vec<NameRow>,
     list: ListState,
     loading: bool,
-    applying: bool,
+    pub(super) applying: bool,
     message: Option<String>,
     generation: u64,
+    saved: HashMap<ReviewKey, Vec<NameRow>>,
+    cursor: usize,
+    pub(super) editing: Option<usize>,
+}
+
+#[derive(Hash, PartialEq, Eq)]
+enum ReviewKey {
+    Files(Vec<PathBuf>),
+    Folder(PathBuf, bool),
 }
 
 struct NameRow {
@@ -42,6 +51,7 @@ struct NameRow {
     selected: bool,
     status: Option<String>,
     done: bool,
+    failed: bool,
 }
 
 struct PreviewRow {
@@ -63,7 +73,36 @@ impl Naming {
             applying: false,
             message: None,
             generation: 0,
+            saved: HashMap::new(),
+            cursor: 0,
+            editing: None,
         }
+    }
+
+    fn review_key(&self) -> Option<ReviewKey> {
+        match self.mode {
+            SourceMode::Files => {
+                let mut files = self.files.clone();
+                files.sort();
+                Some(ReviewKey::Files(files))
+            }
+            SourceMode::Folder => self
+                .folder
+                .clone()
+                .map(|path| ReviewKey::Folder(path, self.include_subfolders)),
+        }
+    }
+
+    fn row_start(&self) -> usize {
+        if self.mode == SourceMode::Folder {
+            5
+        } else {
+            4
+        }
+    }
+
+    fn apply_cursor(&self) -> usize {
+        self.row_start() + self.rows.len()
     }
 }
 
@@ -150,7 +189,7 @@ fn preview(paths: Vec<PathBuf>) -> Vec<PreviewRow> {
                     None => PreviewRow {
                         source,
                         plan: None,
-                        status: Some("No title found".into()),
+                        status: None,
                     },
                 },
                 Err(error) => PreviewRow {
@@ -198,13 +237,178 @@ impl Gyotaku {
     }
 
     fn naming_mode(&mut self, mode: SourceMode, cx: &mut Context<Self>) {
+        let Page::Naming(naming) = &self.page else {
+            return;
+        };
+        if naming.applying || naming.mode == mode {
+            return;
+        }
+        self.save_naming_review();
         if let Page::Naming(naming) = &mut self.page {
             naming.mode = mode;
+        }
+        self.show_naming_review(cx);
+    }
+
+    fn save_naming_review(&mut self) {
+        let Page::Naming(naming) = &mut self.page else {
+            return;
+        };
+        if !naming.loading
+            && let Some(key) = naming.review_key()
+        {
+            naming.saved.insert(key, std::mem::take(&mut naming.rows));
+        }
+        naming.generation += 1;
+        naming.loading = false;
+        naming.editing = None;
+    }
+
+    fn show_naming_review(&mut self, cx: &mut Context<Self>) {
+        let Page::Naming(naming) = &mut self.page else {
+            return;
+        };
+        naming.message = None;
+        naming.cursor = 0;
+        if let Some(key) = naming.review_key()
+            && let Some(rows) = naming.saved.remove(&key)
+        {
+            naming.rows = rows;
+            naming.list.reset(naming.rows.len());
+            cx.notify();
+            return;
         }
         self.refresh_naming(cx);
     }
 
+    fn toggle_naming_subfolders(&mut self, cx: &mut Context<Self>) {
+        if !matches!(&self.page, Page::Naming(naming) if naming.mode == SourceMode::Folder && !naming.applying)
+        {
+            return;
+        }
+        self.save_naming_review();
+        if let Page::Naming(naming) = &mut self.page {
+            naming.include_subfolders = !naming.include_subfolders;
+        }
+        self.show_naming_review(cx);
+    }
+
+    fn toggle_naming_row(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Page::Naming(naming) = &mut self.page
+            && !naming.applying
+            && let Some(row) = naming.rows.get_mut(index)
+            && !row.done
+            && (row.status.is_none() || row.failed)
+        {
+            row.selected = !row.selected;
+            cx.notify();
+        }
+    }
+
+    pub(super) fn naming_step(
+        &mut self,
+        backward: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Page::Naming(naming) = &mut self.page else {
+            return;
+        };
+        if naming.applying {
+            return;
+        }
+        if naming.editing.take().is_some() {
+            window.focus(&self.panel_focus, cx);
+        }
+        let last = naming.apply_cursor();
+        naming.cursor = if backward {
+            if naming.cursor == 0 {
+                last
+            } else {
+                naming.cursor - 1
+            }
+        } else if naming.cursor == last {
+            0
+        } else {
+            naming.cursor + 1
+        };
+        if naming.cursor >= naming.row_start() && naming.cursor < last {
+            naming
+                .list
+                .scroll_to_reveal_item(naming.cursor - naming.row_start());
+        }
+        cx.notify();
+    }
+
+    pub(super) fn naming_key(&mut self, key: Key, window: &mut Window, cx: &mut Context<Self>) {
+        let Page::Naming(naming) = &self.page else {
+            return;
+        };
+        if naming.applying {
+            return;
+        }
+        if naming.editing.is_some() {
+            if key == Key::Enter {
+                if let Page::Naming(naming) = &mut self.page {
+                    naming.editing = None;
+                }
+                window.focus(&self.panel_focus, cx);
+            }
+            return;
+        }
+        match key {
+            Key::Up | Key::Left => self.naming_step(true, window, cx),
+            Key::Down | Key::Right => self.naming_step(false, window, cx),
+            Key::Enter | Key::Space => self.activate_naming_cursor(key == Key::Enter, window, cx),
+            Key::Remove => {}
+        }
+    }
+
+    fn activate_naming_cursor(&mut self, enter: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Page::Naming(naming) = &self.page else {
+            return;
+        };
+        if naming.applying {
+            return;
+        }
+        let cursor = naming.cursor;
+        let row_start = naming.row_start();
+        let apply = naming.apply_cursor();
+        let folder_mode = naming.mode == SourceMode::Folder;
+        if cursor == 0 {
+            self.panel_back(window, cx);
+        } else if cursor == 1 {
+            self.naming_mode(SourceMode::Files, cx);
+        } else if cursor == 2 {
+            self.naming_mode(SourceMode::Folder, cx);
+        } else if cursor == 3 {
+            self.choose_naming_source(folder_mode, window, cx);
+        } else if folder_mode && cursor == 4 {
+            self.toggle_naming_subfolders(cx);
+        } else if cursor < apply {
+            let index = cursor - row_start;
+            if enter {
+                let input = if let Page::Naming(naming) = &mut self.page {
+                    naming.editing = Some(index);
+                    naming.rows.get(index).map(|row| row.target.clone())
+                } else {
+                    None
+                };
+                if let Some(input) = input {
+                    window.focus(&input.read(cx).focus_handle(cx), cx);
+                }
+            } else {
+                self.toggle_naming_row(index, cx);
+            }
+        } else if cursor == apply {
+            self.rename_naming_selection(cx);
+        }
+    }
+
     fn choose_naming_source(&mut self, folder: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(&self.page, Page::Naming(naming) if naming.applying) {
+            return;
+        }
         let picked = cx.prompt_for_paths(PathPromptOptions {
             files: !folder,
             directories: folder,
@@ -227,7 +431,18 @@ impl Gyotaku {
             let result = picked.await;
             let _ = this.update(cx, |this, cx| match result {
                 Ok(Ok(Some(paths))) => {
+                    if paths.is_empty() {
+                        this.flash("No images chosen", cx);
+                        return;
+                    }
                     if let Page::Naming(naming) = &mut this.page {
+                        if naming.applying {
+                            return;
+                        }
+                        this.save_naming_review();
+                        let Page::Naming(naming) = &mut this.page else {
+                            return;
+                        };
                         if folder {
                             naming.folder = paths.into_iter().next();
                             naming.mode = SourceMode::Folder;
@@ -235,7 +450,7 @@ impl Gyotaku {
                             naming.files = paths;
                             naming.mode = SourceMode::Files;
                         }
-                        this.refresh_naming(cx);
+                        this.show_naming_review(cx);
                     }
                 }
                 Ok(Ok(None)) => {}
@@ -317,6 +532,7 @@ impl Gyotaku {
                                 selected: row.plan.is_some() && row.status.is_none(),
                                 status: row.status,
                                 done: false,
+                                failed: false,
                             });
                         }
                         naming.list.reset(naming.rows.len());
@@ -344,6 +560,9 @@ impl Gyotaku {
                 continue;
             }
             let name = row.target.read(cx).content.to_string();
+            if name.trim().is_empty() {
+                continue;
+            }
             if !valid_name(&row.source, &name) {
                 naming.message = Some(format!("Invalid filename: {name}"));
                 cx.notify();
@@ -383,42 +602,58 @@ impl Gyotaku {
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
-                let Page::Naming(naming) = &mut this.page else {
-                    return;
-                };
-                if naming.generation != generation {
-                    return;
-                }
-                naming.applying = false;
                 let mut changed = 0;
                 let mut failed = 0;
+                let mut index_failed = 0;
                 for (index, source, target, result) in results {
                     match result {
                         Ok(()) => {
                             changed += 1;
-                            let _ = this.index.rename(&source, &target);
-                            if let Some(row) = naming.rows.get_mut(index) {
+                            let index_error = this.index.rename(&source, &target).err();
+                            if index_error.is_some() {
+                                index_failed += 1;
+                            }
+                            if let Page::Naming(naming) = &mut this.page
+                                && naming.generation == generation
+                                && let Some(row) = naming.rows.get_mut(index)
+                            {
                                 row.source = target;
                                 row.selected = false;
                                 row.done = true;
+                                row.failed = false;
+                                row.status = index_error.map(|_| "Index update failed".into());
                             }
                         }
                         Err(error) => {
                             failed += 1;
-                            if let Some(row) = naming.rows.get_mut(index) {
+                            if let Page::Naming(naming) = &mut this.page
+                                && naming.generation == generation
+                                && let Some(row) = naming.rows.get_mut(index)
+                            {
                                 row.status = Some(error);
+                                row.failed = true;
                             }
                         }
                     }
                 }
-                naming.message = Some(format!(
-                    "Renamed {changed} images{}",
-                    if failed > 0 {
-                        format!(", {failed} failed")
+                let mut summary = format!("Renamed {changed} images");
+                if failed > 0 {
+                    summary.push_str(&format!(", {failed} failed"));
+                }
+                if index_failed > 0 {
+                    summary.push_str(&format!(", {index_failed} index updates failed"));
+                }
+                if let Page::Naming(naming) = &mut this.page {
+                    naming.applying = false;
+                    naming.saved.clear();
+                    if naming.generation == generation {
+                        naming.message = Some(summary);
                     } else {
-                        String::new()
+                        this.flash(summary, cx);
                     }
-                ));
+                } else {
+                    this.flash(summary, cx);
+                }
                 this.search(cx);
                 cx.notify();
             });
@@ -459,12 +694,20 @@ impl Gyotaku {
         let applying = naming.applying;
         let message = naming.message.clone();
         let list_state = naming.list.clone();
+        let cursor = naming.cursor;
         let tab = |id, label, active, mode| {
+            let position = if mode == SourceMode::Files { 1 } else { 2 };
             div()
                 .id(id)
                 .px_3()
                 .py_2()
                 .rounded(px(6.))
+                .border_1()
+                .border_color(if cursor == position {
+                    theme.text
+                } else {
+                    theme.panel
+                })
                 .bg(if active { theme.keycap } else { theme.panel })
                 .cursor(CursorStyle::PointingHand)
                 .child(label)
@@ -475,8 +718,10 @@ impl Gyotaku {
         div().size_full().flex().flex_col()
             .child(div().h(px(58.)).px_4().flex().items_center().justify_between().border_b_1().border_color(theme.hairline)
                 .child(div().text_lg().font_weight(gpui::FontWeight::SEMIBOLD).child("Rename images"))
-                .child(div().id("naming-back").cursor(CursorStyle::PointingHand).child("Back to search")
-                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.leave_panel(window, cx)))))
+                .child(div().id("naming-back").px_2().py_1().rounded(px(6.)).border_1()
+                    .border_color(if cursor == 0 { theme.text } else { theme.panel })
+                    .cursor(CursorStyle::PointingHand).child("Back to search")
+                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.panel_back(window, cx)))))
             .child(div().flex_1().min_h_0().flex().flex_col().px_4().pt_4()
                 .child(div().text_sm().text_color(theme.muted).child("Review the proposed names, then rename the selected files in place. No copies are made."))
                 .child(div().flex().gap_2().mt_4()
@@ -484,25 +729,28 @@ impl Gyotaku {
                     .child(tab("naming-folder", "Folder", folder_mode, SourceMode::Folder)))
                 .child(div().flex().items_center().justify_between().mt_4().p_3().border_1().border_color(theme.hairline).rounded(px(8.))
                     .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().child(if folder_mode { folder } else { format!("{files} specific images") }))
-                    .child(div().id("naming-choose").ml_3().px_3().py_2().rounded(px(6.)).bg(theme.keycap).cursor(CursorStyle::PointingHand)
+                    .child(div().id("naming-choose").ml_3().px_3().py_2().rounded(px(6.)).border_1()
+                        .border_color(if cursor == 3 { theme.text } else { theme.panel })
+                        .bg(theme.keycap).cursor(CursorStyle::PointingHand)
                         .child(if folder_mode { "Choose folder" } else { "Choose images" })
                         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| this.choose_naming_source(folder_mode, window, cx)))))
-                .when(folder_mode, |panel| panel.child(div().id("naming-recursive").flex().items_center().gap_2().py_3().cursor(CursorStyle::PointingHand)
+                .when(folder_mode, |panel| panel.child(div().id("naming-recursive").flex().items_center().gap_2().py_3().border_1()
+                    .border_color(if cursor == 4 { theme.text } else { theme.panel })
+                    .cursor(CursorStyle::PointingHand)
                     .child(div().w(px(18.)).h(px(18.)).border_1().border_color(theme.text).bg(if include_subfolders { theme.text } else { theme.panel }))
                     .child("Include subfolders")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                        if let Page::Naming(naming) = &mut this.page { naming.include_subfolders = !naming.include_subfolders; }
-                        this.refresh_naming(cx);
-                    }))))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_naming_subfolders(cx)))))
                 .child(div().flex().items_center().justify_between().mt_3().pb_2().border_b_1().border_color(theme.hairline)
                     .child(div().text_lg().child("Name preview"))
                     .child(div().text_sm().text_color(theme.muted).child(if loading { "Reading images...".into() } else { format!("{total} shown, {selected} selected") })))
                 .child(list(list_state, cx.processor(Self::render_naming_row)).flex_1().min_h_0())
-                .child(div().py_2().text_sm().text_color(theme.muted).child("Names that already exist are blocked before renaming. Click a row or its checkbox to change the selection."))
+                .child(div().py_2().text_sm().text_color(theme.muted).child("Tab or arrows move between controls. Space selects a row; Enter edits its name. Existing names are blocked."))
                 .when_some(message, |panel, message| panel.child(div().py_2().text_sm().child(message)))
                 .child(div().flex().items_center().justify_between().gap_3().py_3().border_t_1().border_color(theme.hairline)
                     .child(div().text_sm().text_color(theme.muted).child("In-place rename. File contents stay where they are."))
-                    .child(div().id("naming-apply").px_4().py_2().rounded(px(7.)).bg(if selected > 0 && !loading && !applying { theme.text } else { theme.keycap })
+                    .child(div().id("naming-apply").px_4().py_2().rounded(px(7.)).border_1()
+                        .border_color(if cursor == naming.apply_cursor() { theme.text } else { theme.panel })
+                        .bg(if selected > 0 && !loading && !applying { theme.text } else { theme.keycap })
                         .text_color(if selected > 0 && !loading && !applying { theme.panel } else { theme.muted })
                         .cursor(CursorStyle::PointingHand)
                         .child(if applying { "Renaming...".into() } else { format!("Rename {selected} images") })
@@ -535,10 +783,13 @@ impl Gyotaku {
             .map(|path| path.display().to_string())
             .unwrap_or_default();
         let status = if row.done {
-            "Renamed".to_string()
+            row.status.clone().unwrap_or_else(|| "Renamed".into())
+        } else if row.status.is_none() && row.target.read(cx).content.is_empty() {
+            "Needs name".to_string()
         } else {
             row.status.clone().unwrap_or_else(|| "Ready".into())
         };
+        let keyboard_focused = naming.cursor == naming.row_start() + index;
         let target = row.target.clone();
         div()
             .id(("naming-row", index))
@@ -549,17 +800,20 @@ impl Gyotaku {
             .gap_3()
             .border_b_1()
             .border_color(theme.hairline)
+            .bg(if keyboard_focused {
+                theme.hover_wash
+            } else {
+                theme.panel
+            })
             .cursor(CursorStyle::PointingHand)
             .hover(move |style| style.bg(theme.hover_wash))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                if let Page::Naming(naming) = &mut this.page
-                    && let Some(row) = naming.rows.get_mut(index)
-                    && row.status.is_none()
-                    && !row.done
-                {
-                    row.selected = !row.selected;
-                    cx.notify();
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                if let Page::Naming(naming) = &mut this.page {
+                    naming.cursor = naming.row_start() + index;
+                    naming.editing = None;
                 }
+                window.focus(&this.panel_focus, cx);
+                this.toggle_naming_row(index, cx);
             }))
             .child(
                 div()
@@ -593,7 +847,16 @@ impl Gyotaku {
                     .flex_1()
                     .min_w_0()
                     .px_2()
-                    .on_click(|_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        if let Page::Naming(naming) = &mut this.page {
+                            naming.cursor = naming.row_start() + index;
+                            naming.editing = Some(index);
+                            if let Some(row) = naming.rows.get(index) {
+                                window.focus(&row.target.read(cx).focus_handle(cx), cx);
+                            }
+                        }
+                        cx.stop_propagation();
+                    }))
                     .child(target),
             )
             .child(

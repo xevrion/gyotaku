@@ -2668,7 +2668,11 @@ impl Render for Gyotaku {
         // space and delete mean "toggle" and "remove" there instead of typing.
         let panel = self.on_panel().then(|| {
             div()
-                .key_context("Panel")
+                .key_context(if matches!(self.page, Page::Naming(_)) {
+                    "Naming"
+                } else {
+                    "Panel"
+                })
                 .track_focus(&self.panel_focus)
                 .on_action(cx.listener(Self::toggle))
                 .on_action(cx.listener(Self::remove))
