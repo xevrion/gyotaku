@@ -2,6 +2,7 @@ pub mod burst;
 pub mod clipboard;
 mod config;
 mod index;
+pub mod naming;
 pub mod query;
 pub mod status;
 pub mod trash;
@@ -13,6 +14,9 @@ use sha2::{Digest, Sha256};
 
 pub use config::{Config, Script, ThemeChoice, default_threads, pictures_dir, tidy, too_broad};
 pub use index::{Hit, Index};
+pub use naming::{
+    CaseStyle, FallbackStrategy, InfographicNature, NameOptions, PlannedRename, TitleCandidate,
+};
 pub use query::{Filter, Query};
 
 /// A box in normalized image coordinates, so the same numbers work on a
