@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
-use gyotaku_core::naming::{CaseStyle, FallbackStrategy, NameOptions, PlannedRename, plan_rename};
+use gyotaku_core::naming::{
+    CaseStyle, FallbackStrategy, NameOptions, PlannedRename, plan_rename, rename_no_overwrite,
+};
 use gyotaku_core::{Config, Index, Line, Script};
 use gyotaku_ocr::Ocr;
 use serde::Serialize;
@@ -66,22 +68,12 @@ impl From<FallbackArg> for FallbackStrategy {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
-pub enum ApplyAction {
-    /// Copy file to target path, leaving the original screenshot untouched (default, obeys AGENTS.md)
-    #[default]
-    Copy,
-    /// Move file to target path (refused for screenshots per AGENTS.md)
-    Move,
-}
-
 pub struct BatchRunOptions {
     pub paths: Vec<PathBuf>,
     pub limit: Option<usize>,
     pub sort: SortOrder,
     pub dry_run: bool,
     pub apply: bool,
-    pub action: ApplyAction,
     pub yes: bool,
     pub format: OutputFormat,
     pub case: CaseStyleArg,
@@ -180,15 +172,9 @@ fn get_lines_for_image(
     }
 }
 
-/// Atomically copies `src` to `dst` failing closed if `dst` already exists,
-/// eliminating TOCTOU race conditions where a target could be overwritten.
-fn copy_no_overwrite(src: &Path, dst: &Path) -> io::Result<u64> {
-    let mut reader = fs::File::open(src)?;
-    let mut writer = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(dst)?;
-    io::copy(&mut reader, &mut writer)
+fn already_present(plan: &PlannedRename) -> bool {
+    plan.target_path.exists()
+        && gyotaku_core::naming::files_have_same_content(&plan.source_path, &plan.target_path)
 }
 
 pub fn run(opts: BatchRunOptions) -> Result<()> {
@@ -332,15 +318,7 @@ pub fn run(opts: BatchRunOptions) -> Result<()> {
             if !io::stdin().is_terminal() {
                 bail!("--apply requires terminal confirmation or the -y/--yes flag");
             }
-            let action_verb = match opts.action {
-                ApplyAction::Copy => "copying",
-                ApplyAction::Move => "renaming",
-            };
-            print!(
-                "\nProceed with {} {} files? [y/N]: ",
-                action_verb,
-                plans.len()
-            );
+            print!("\nRename {} files in place? [y/N]: ", plans.len());
             io::stdout().flush()?;
             let mut input = String::new();
             io::stdin().read_line(&mut input)?;
@@ -351,43 +329,30 @@ pub fn run(opts: BatchRunOptions) -> Result<()> {
         }
 
         let mut success_count = 0;
+        let mut failed_count = 0;
         for plan in &plans {
             if plan.source_path != plan.target_path {
-                match opts.action {
-                    ApplyAction::Copy => {
-                        match copy_no_overwrite(&plan.source_path, &plan.target_path) {
-                            Ok(_) => success_count += 1,
-                            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                                eprintln!(
-                                    "error: target already exists: {}; refusing to overwrite",
-                                    plan.target_path.display()
-                                );
-                            }
-                            Err(e) => {
-                                eprintln!(
-                                    "error copying {} to {}: {:#}",
-                                    plan.source_path.display(),
-                                    plan.target_path.display(),
-                                    e
-                                );
-                            }
-                        }
-                    }
-                    ApplyAction::Move => {
-                        // Invariant per AGENTS.md: Never write to, move or delete a user's screenshots.
+                // A copy from an older batch run may already occupy this name.
+                if already_present(plan) {
+                    continue;
+                }
+                match rename_no_overwrite(&plan.source_path, &plan.target_path) {
+                    Ok(()) => success_count += 1,
+                    Err(e) => {
+                        failed_count += 1;
                         eprintln!(
-                            "error: cannot move user screenshot {} (per AGENTS.md rule: user screenshots are read-only; use --action copy or system trash)",
-                            plan.source_path.display()
+                            "error renaming {} to {}: {e}",
+                            plan.source_path.display(),
+                            plan.target_path.display(),
                         );
                     }
                 }
             }
         }
-        let action_past = match opts.action {
-            ApplyAction::Copy => "copied",
-            ApplyAction::Move => "renamed",
-        };
-        println!("\nSuccessfully {action_past} {success_count} files.");
+        println!("\nSuccessfully renamed {success_count} files.");
+        if failed_count > 0 {
+            bail!("{failed_count} files could not be renamed");
+        }
     }
 
     Ok(())
@@ -449,7 +414,7 @@ fn print_table(plans: &[PlannedRename], elapsed: std::time::Duration, dry_run: b
 fn print_script(plans: &[PlannedRename]) {
     let commands: Vec<(&Path, &Path, &str)> = plans
         .iter()
-        .filter(|p| p.source_path != p.target_path)
+        .filter(|p| p.source_path != p.target_path && !already_present(p))
         .map(|p| {
             (
                 p.source_path.as_path(),
@@ -459,31 +424,4 @@ fn print_script(plans: &[PlannedRename]) {
         })
         .collect();
     crate::platform::print_rename_script(&commands);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_copy_no_overwrite_refuses_to_clobber_existing_target() {
-        let temp_dir = std::env::temp_dir().join("gyotaku_atomic_copy_unit_test");
-        let _ = fs::remove_dir_all(&temp_dir);
-        fs::create_dir_all(&temp_dir).unwrap();
-
-        let src = temp_dir.join("source.png");
-        let dst = temp_dir.join("target.png");
-        fs::write(&src, b"source image bytes").unwrap();
-        fs::write(&dst, b"original existing content").unwrap();
-
-        let result = copy_no_overwrite(&src, &dst);
-        assert!(result.is_err(), "must fail when target exists");
-        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::AlreadyExists);
-
-        // Verify dst content was untouched
-        let dst_content = fs::read(&dst).unwrap();
-        assert_eq!(dst_content, b"original existing content");
-
-        let _ = fs::remove_dir_all(&temp_dir);
-    }
 }

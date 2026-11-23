@@ -1,6 +1,8 @@
 //! Infographic and screenshot layout analysis, title extraction, and filename recommendation.
 
 use std::collections::HashSet;
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -701,6 +703,67 @@ pub fn slugify(
     final_base
 }
 
+/// Returns true if two files on disk have identical byte contents.
+/// Compares metadata size first, then streams in 8KB chunks.
+pub fn files_have_same_content(path_a: &Path, path_b: &Path) -> bool {
+    let Ok(meta_a) = path_a.metadata() else {
+        return false;
+    };
+    let Ok(meta_b) = path_b.metadata() else {
+        return false;
+    };
+    if meta_a.len() != meta_b.len() {
+        return false;
+    }
+    if meta_a.len() == 0 {
+        return true;
+    }
+    let Ok(mut file_a) = std::fs::File::open(path_a) else {
+        return false;
+    };
+    let Ok(mut file_b) = std::fs::File::open(path_b) else {
+        return false;
+    };
+    use std::io::Read;
+    let mut buf_a = [0u8; 8192];
+    let mut buf_b = [0u8; 8192];
+    loop {
+        let Ok(n_a) = file_a.read(&mut buf_a) else {
+            return false;
+        };
+        let Ok(n_b) = file_b.read(&mut buf_b) else {
+            return false;
+        };
+        if n_a != n_b || buf_a[..n_a] != buf_b[..n_b] {
+            return false;
+        }
+        if n_a == 0 {
+            return true;
+        }
+    }
+}
+
+/// Changes a filename without replacing an existing target or copying image bytes.
+pub fn rename_no_overwrite(source: &Path, target: &Path) -> io::Result<()> {
+    if source == target {
+        return Ok(());
+    }
+    if fs::symlink_metadata(source)?.file_type().is_symlink() {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "symlink sources are not renamed",
+        ));
+    }
+    // A hard link reserves the target name without replacing it and shares the
+    // same file data. Removing the old name completes the rename.
+    fs::hard_link(source, target)?;
+    if let Err(error) = fs::remove_file(source) {
+        let _ = fs::remove_file(target);
+        return Err(error);
+    }
+    Ok(())
+}
+
 /// Resolves duplicate recommended filenames in a batch by appending sequential counters.
 pub fn resolve_collision(
     base_name: &str,
@@ -713,8 +776,10 @@ pub fn resolve_collision(
 
 /// Resolves duplicate recommended filenames in a batch, checking both in-memory batch reservations
 /// and whether a conflicting file already exists on disk in the target directory.
+/// If `source_file_or_dir` points to an existing file and the target on disk already has identical
+/// content (or is the source file itself), collision is averted on repeated runs.
 pub fn resolve_collision_with_disk(
-    parent: Option<&Path>,
+    source_file_or_dir: Option<&Path>,
     base_name: &str,
     ext: &str,
     case_style: CaseStyle,
@@ -733,15 +798,33 @@ pub fn resolve_collision_with_disk(
         format!("{base_name}.{ext}")
     };
 
-    let exists_on_disk = |name: &str| -> bool {
-        if let Some(dir) = parent {
-            dir.join(name).exists()
-        } else {
-            false
-        }
+    let (parent, source_file) = match source_file_or_dir {
+        Some(p) if p.is_dir() => (Some(p), None),
+        Some(p) => (p.parent(), Some(p)),
+        None => (None, None),
     };
 
-    if !used_names.contains(&initial.to_ascii_lowercase()) && !exists_on_disk(&initial) {
+    let is_collision = |candidate_name: &str| -> bool {
+        let lower = candidate_name.to_ascii_lowercase();
+        let Some(dir) = parent else {
+            return used_names.contains(&lower);
+        };
+        let candidate_path = dir.join(candidate_name);
+        if let Some(src) = source_file {
+            if candidate_path == src {
+                return false;
+            }
+            if candidate_path.exists() && files_have_same_content(src, &candidate_path) {
+                return false;
+            }
+        }
+        if used_names.contains(&lower) {
+            return true;
+        }
+        candidate_path.exists()
+    };
+
+    if !is_collision(&initial) {
         used_names.insert(initial.to_ascii_lowercase());
         return initial;
     }
@@ -754,7 +837,7 @@ pub fn resolve_collision_with_disk(
             format!("{base_name}{delim}{counter}.{ext}")
         };
 
-        if !used_names.contains(&candidate.to_ascii_lowercase()) && !exists_on_disk(&candidate) {
+        if !is_collision(&candidate) {
             used_names.insert(candidate.to_ascii_lowercase());
             return candidate;
         }
@@ -873,13 +956,8 @@ pub fn plan_rename(
         options.max_length,
     );
 
-    let final_filename = resolve_collision_with_disk(
-        path.parent(),
-        &base_slug,
-        &ext,
-        options.case_style,
-        used_names,
-    );
+    let final_filename =
+        resolve_collision_with_disk(Some(path), &base_slug, &ext, options.case_style, used_names);
     let target_path = path.with_file_name(&final_filename);
 
     Some(PlannedRename {
@@ -1004,6 +1082,29 @@ mod tests {
 
         let name3 = resolve_collision("overview", "png", CaseStyle::Snake, &mut used);
         assert_eq!(name3, "overview_3.png");
+    }
+
+    #[test]
+    fn rename_changes_only_the_name_and_never_overwrites() {
+        let dir = std::env::temp_dir().join("gyotaku_rename_no_overwrite_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("source.png");
+        let occupied = dir.join("occupied.png");
+        let target = dir.join("named.png");
+        fs::write(&source, b"image bytes").unwrap();
+        fs::write(&occupied, b"other bytes").unwrap();
+
+        let error = rename_no_overwrite(&source, &occupied).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&occupied).unwrap(), b"other bytes");
+        assert!(source.exists());
+
+        rename_no_overwrite(&source, &target).unwrap();
+        assert!(!source.exists());
+        assert_eq!(fs::read(&target).unwrap(), b"image bytes");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 2);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

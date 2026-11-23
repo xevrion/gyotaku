@@ -208,17 +208,17 @@ fn test_batch_name_script_format() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "failed: {stderr}");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    #[cfg(windows)]
-    assert!(stdout.contains("Copy-Item"), "{stdout}");
-    #[cfg(not(windows))]
-    assert!(stdout.contains("cp -n"), "{stdout}");
+    assert!(
+        stdout.contains("[System.IO.File]::Move") || stdout.contains("mv -n"),
+        "{stdout}"
+    );
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
 
 #[test]
-fn test_batch_name_apply_copies_by_default_preserving_original() {
-    let temp_dir = std::env::temp_dir().join("gyotaku_apply_copy_test");
+fn test_batch_name_apply_renames_without_copying() {
+    let temp_dir = std::env::temp_dir().join("gyotaku_apply_rename_test");
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 
@@ -239,22 +239,23 @@ fn test_batch_name_apply_copies_by_default_preserving_original() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "failed: {stderr}");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Successfully copied 1 files"), "{stdout}");
+    assert!(stdout.contains("Successfully renamed 1 files"), "{stdout}");
 
-    // Original file must be preserved intact per AGENTS.md, and new copy must exist!
     let expected_target = temp_dir.join("architecture_clean_architecture_in_rust.png");
-    assert!(
-        original_file.exists(),
-        "original file must remain untouched when copying"
+    assert!(!original_file.exists(), "old filename must be gone");
+    assert!(expected_target.exists(), "renamed file must exist");
+    assert_eq!(
+        fs::read(&expected_target).unwrap(),
+        fs::read(&fixture).unwrap()
     );
-    assert!(expected_target.exists(), "new copy must exist");
+    assert_eq!(fs::read_dir(&temp_dir).unwrap().count(), 1);
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
 
 #[test]
-fn test_batch_name_move_mode_refuses_screenshot_move() {
-    let temp_dir = std::env::temp_dir().join("gyotaku_move_refuse_test");
+fn test_batch_name_repeated_runs_are_idempotent() {
+    let temp_dir = std::env::temp_dir().join("gyotaku_idempotent_runs_test");
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 
@@ -264,26 +265,58 @@ fn test_batch_name_move_mode_refuses_screenshot_move() {
 
     seed_index_for_file(&original_file, "Clean Architecture in Rust");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_gyotaku"))
+    // Run 1: initial apply
+    let output1 = Command::new(env!("CARGO_BIN_EXE_gyotaku"))
         .arg("name")
-        .arg(&original_file)
+        .arg(&temp_dir)
         .arg("--apply")
-        .arg("--action")
-        .arg("move")
         .arg("-y")
         .output()
-        .expect("execute gyotaku name --apply --action move -y");
+        .expect("execute gyotaku name --apply -y");
+    assert!(output1.status.success());
+    let target = temp_dir.join("architecture_clean_architecture_in_rust.png");
+    assert!(target.exists(), "renamed file must exist after run 1");
+    assert!(!original_file.exists());
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Seed index for the newly created target so OCR doesn't run offline in tests
+    seed_index_for_file(&target, "Clean Architecture in Rust");
+
+    // Run 2: repeat on the same folder
+    let output2 = Command::new(env!("CARGO_BIN_EXE_gyotaku"))
+        .arg("name")
+        .arg(&temp_dir)
+        .arg("--apply")
+        .arg("-y")
+        .output()
+        .expect("execute gyotaku name --apply -y repeat");
+    assert!(output2.status.success());
     assert!(
-        stderr.contains("cannot move user screenshot"),
-        "must refuse move per AGENTS.md invariant: {stderr}"
+        String::from_utf8_lossy(&output2.stdout).contains("Successfully renamed 0 files"),
+        "second run should report no new renames"
     );
 
-    // Original file must NOT have been moved or deleted!
+    // Critical assertion: NO duplicate _2.png or _3.png files should be created!
+    let target_2 = temp_dir.join("architecture_clean_architecture_in_rust_2.png");
+    let target_3 = temp_dir.join("architecture_clean_architecture_in_rust_3.png");
     assert!(
-        original_file.exists(),
-        "original file must remain intact when move is refused"
+        !target_2.exists(),
+        "repeated runs must not create _2 duplicate file"
+    );
+    assert!(
+        !target_3.exists(),
+        "repeated runs must not create _3 duplicate file"
+    );
+
+    let script = Command::new(env!("CARGO_BIN_EXE_gyotaku"))
+        .arg("name")
+        .arg(&temp_dir)
+        .args(["--format", "script"])
+        .output()
+        .expect("generate script after rename");
+    assert!(script.status.success());
+    assert!(
+        !String::from_utf8_lossy(&script.stdout).contains("original_diagram.png"),
+        "script must not rename an image already named"
     );
 
     let _ = fs::remove_dir_all(&temp_dir);
@@ -316,7 +349,7 @@ fn test_batch_name_occupied_target_refuses_overwrite() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success(), "run should succeed: {stderr}");
-    assert!(stdout.contains("Successfully copied 1 files"), "{stdout}");
+    assert!(stdout.contains("Successfully renamed 1 files"), "{stdout}");
 
     // Verify sentinel content was NOT overwritten
     let target_data = fs::read(&occupied_target).unwrap();
@@ -331,7 +364,7 @@ fn test_batch_name_occupied_target_refuses_overwrite() {
         resolved_target.exists(),
         "numbered non-colliding file must be created"
     );
-    assert!(original_file.exists(), "original file must remain intact");
+    assert!(!original_file.exists(), "source name must be removed");
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
