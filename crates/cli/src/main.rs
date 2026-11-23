@@ -64,13 +64,19 @@ enum Command {
         /// Files or directories to process recursively
         #[arg(required = true)]
         paths: Vec<PathBuf>,
+        /// Process at most this many images per run
+        #[arg(long)]
+        limit: Option<std::num::NonZeroUsize>,
+        /// Order images before applying --limit
+        #[arg(long, value_enum, default_value_t = batch_name::SortOrder::Newest)]
+        sort: batch_name::SortOrder,
         /// Report proposed renames without modifying files on disk (default behavior)
         #[arg(long, default_value_t = true)]
         dry_run: bool,
         /// Execute renames on disk
         #[arg(long)]
         apply: bool,
-        /// Action to perform when --apply is set (copy preserves originals per AGENTS.md, move moves non-screenshot files)
+        /// Action to perform when --apply is set (copy preserves originals per AGENTS.md, move is refused for screenshots)
         #[arg(long, value_enum, default_value_t = batch_name::ApplyAction::Copy)]
         action: batch_name::ApplyAction,
         /// Skip confirmation prompt when applying renames
@@ -170,6 +176,8 @@ fn main() -> Result<()> {
         }
         Command::Name {
             paths,
+            limit,
+            sort,
             dry_run,
             apply,
             action,
@@ -184,6 +192,8 @@ fn main() -> Result<()> {
         } => {
             batch_name::run(batch_name::BatchRunOptions {
                 paths,
+                limit: limit.map(std::num::NonZeroUsize::get),
+                sort,
                 dry_run: !apply || dry_run,
                 apply,
                 action,

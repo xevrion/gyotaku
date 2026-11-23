@@ -89,6 +89,71 @@ fn test_batch_name_dry_run_leaves_files_untouched() {
 }
 
 #[test]
+fn test_batch_name_limit_selects_first_images_in_path_order() {
+    let temp_dir = std::env::temp_dir().join("gyotaku_limit_test");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    let fixture = fixture_path();
+    for name in ["c.png", "a.png", "b.png"] {
+        let path = temp_dir.join(name);
+        fs::copy(&fixture, &path).expect("copy fixture");
+        let seconds = match name {
+            "a.png" => 1_700_000_000,
+            "b.png" => 1_700_000_100,
+            _ => 1_700_000_200,
+        };
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds)),
+            )
+            .unwrap();
+        seed_index_for_file(&path, "Modern Git Cheat Sheet");
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_gyotaku"))
+        .arg("name")
+        .arg(&temp_dir)
+        .args(["--limit", "2", "--sort", "name", "--format", "json"])
+        .output()
+        .expect("execute gyotaku name --limit");
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let items: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let items = items.as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert!(items[0]["source_path"].as_str().unwrap().ends_with("a.png"));
+    assert!(items[1]["source_path"].as_str().unwrap().ends_with("b.png"));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_gyotaku"))
+        .arg("name")
+        .arg(&temp_dir)
+        .args(["--limit", "2", "--format", "json"])
+        .output()
+        .expect("execute gyotaku name with newest-first default");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let items: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let items = items.as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert!(items[0]["source_path"].as_str().unwrap().ends_with("c.png"));
+    assert!(items[1]["source_path"].as_str().unwrap().ends_with("b.png"));
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
 fn test_batch_name_csv_format() {
     let temp_dir = std::env::temp_dir().join("gyotaku_csv_test");
     let _ = fs::remove_dir_all(&temp_dir);
@@ -144,9 +209,9 @@ fn test_batch_name_script_format() {
     assert!(output.status.success(), "failed: {stderr}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     #[cfg(windows)]
-    assert!(stdout.contains("Rename-Item"), "{stdout}");
+    assert!(stdout.contains("Copy-Item"), "{stdout}");
     #[cfg(not(windows))]
-    assert!(stdout.contains("mv --"), "{stdout}");
+    assert!(stdout.contains("cp -n"), "{stdout}");
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
@@ -188,8 +253,8 @@ fn test_batch_name_apply_copies_by_default_preserving_original() {
 }
 
 #[test]
-fn test_batch_name_apply_action_move() {
-    let temp_dir = std::env::temp_dir().join("gyotaku_apply_move_test");
+fn test_batch_name_move_mode_refuses_screenshot_move() {
+    let temp_dir = std::env::temp_dir().join("gyotaku_move_refuse_test");
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 
@@ -210,16 +275,63 @@ fn test_batch_name_apply_action_move() {
         .expect("execute gyotaku name --apply --action move -y");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(output.status.success(), "failed: {stderr}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Successfully renamed 1 files"), "{stdout}");
-
-    let expected_target = temp_dir.join("architecture_clean_architecture_in_rust.png");
     assert!(
-        !original_file.exists(),
-        "original file should have been moved"
+        stderr.contains("cannot move user screenshot"),
+        "must refuse move per AGENTS.md invariant: {stderr}"
     );
-    assert!(expected_target.exists(), "new renamed file must exist");
+
+    // Original file must NOT have been moved or deleted!
+    assert!(
+        original_file.exists(),
+        "original file must remain intact when move is refused"
+    );
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_batch_name_occupied_target_refuses_overwrite() {
+    let temp_dir = std::env::temp_dir().join("gyotaku_occupied_target_test");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    let fixture = fixture_path();
+    let original_file = temp_dir.join("original_diagram.png");
+    fs::copy(&fixture, &original_file).expect("copy fixture");
+
+    // Pre-create the expected base target file with sentinel content
+    let occupied_target = temp_dir.join("architecture_clean_architecture_in_rust.png");
+    fs::write(&occupied_target, b"occupied destination sentinel data").unwrap();
+
+    seed_index_for_file(&original_file, "Clean Architecture in Rust");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_gyotaku"))
+        .arg("name")
+        .arg(&original_file)
+        .arg("--apply")
+        .arg("-y")
+        .output()
+        .expect("execute gyotaku name --apply -y");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "run should succeed: {stderr}");
+    assert!(stdout.contains("Successfully copied 1 files"), "{stdout}");
+
+    // Verify sentinel content was NOT overwritten
+    let target_data = fs::read(&occupied_target).unwrap();
+    assert_eq!(
+        target_data, b"occupied destination sentinel data",
+        "pre-existing occupied target file must not be overwritten"
+    );
+
+    // Verify non-colliding numbered file was created instead
+    let resolved_target = temp_dir.join("architecture_clean_architecture_in_rust_2.png");
+    assert!(
+        resolved_target.exists(),
+        "numbered non-colliding file must be created"
+    );
+    assert!(original_file.exists(), "original file must remain intact");
 
     let _ = fs::remove_dir_all(&temp_dir);
 }

@@ -14,6 +14,14 @@ use serde::Serialize;
 
 const EXTENSIONS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum SortOrder {
+    #[default]
+    Newest,
+    Oldest,
+    Name,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum OutputFormat {
     Table,
@@ -63,12 +71,14 @@ pub enum ApplyAction {
     /// Copy file to target path, leaving the original screenshot untouched (default, obeys AGENTS.md)
     #[default]
     Copy,
-    /// Move file to target path (refused if file is inside a watched screenshots folder)
+    /// Move file to target path (refused for screenshots per AGENTS.md)
     Move,
 }
 
 pub struct BatchRunOptions {
     pub paths: Vec<PathBuf>,
+    pub limit: Option<usize>,
+    pub sort: SortOrder,
     pub dry_run: bool,
     pub apply: bool,
     pub action: ApplyAction,
@@ -170,9 +180,52 @@ fn get_lines_for_image(
     }
 }
 
+/// Atomically copies `src` to `dst` failing closed if `dst` already exists,
+/// eliminating TOCTOU race conditions where a target could be overwritten.
+fn copy_no_overwrite(src: &Path, dst: &Path) -> io::Result<u64> {
+    let mut reader = fs::File::open(src)?;
+    let mut writer = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dst)?;
+    io::copy(&mut reader, &mut writer)
+}
+
 pub fn run(opts: BatchRunOptions) -> Result<()> {
     let start_time = Instant::now();
-    let images = discover_images(&opts.paths)?;
+    let mut images = discover_images(&opts.paths)?;
+    match opts.sort {
+        SortOrder::Name => images.sort_unstable(),
+        order => {
+            let mut dated: Vec<_> = images
+                .into_iter()
+                .map(|path| {
+                    let modified = path
+                        .metadata()
+                        .and_then(|metadata| metadata.modified())
+                        .ok();
+                    (path, modified)
+                })
+                .collect();
+            dated.sort_unstable_by(|(left_path, left_time), (right_path, right_time)| {
+                let by_time = match (left_time, right_time) {
+                    (Some(left), Some(right)) => match order {
+                        SortOrder::Newest => right.cmp(left),
+                        SortOrder::Oldest => left.cmp(right),
+                        SortOrder::Name => unreachable!(),
+                    },
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                };
+                by_time.then_with(|| left_path.cmp(right_path))
+            });
+            images = dated.into_iter().map(|(path, _)| path).collect();
+        }
+    }
+    if let Some(limit) = opts.limit {
+        images.truncate(limit);
+    }
 
     if images.is_empty() {
         eprintln!("No supported images found in specified paths.");
@@ -297,55 +350,35 @@ pub fn run(opts: BatchRunOptions) -> Result<()> {
             }
         }
 
-        let reading_folders = config.reading_folders();
         let mut success_count = 0;
         for plan in &plans {
             if plan.source_path != plan.target_path {
-                // Safeguard 1: Do not overwrite an existing file on disk
-                if plan.target_path.exists() {
-                    eprintln!(
-                        "error: target already exists: {}; skipping to prevent overwrite",
-                        plan.target_path.display()
-                    );
-                    continue;
-                }
-
                 match opts.action {
                     ApplyAction::Copy => {
-                        if let Err(e) = fs::copy(&plan.source_path, &plan.target_path) {
-                            eprintln!(
-                                "error copying {} to {}: {:#}",
-                                plan.source_path.display(),
-                                plan.target_path.display(),
-                                e
-                            );
-                        } else {
-                            success_count += 1;
+                        match copy_no_overwrite(&plan.source_path, &plan.target_path) {
+                            Ok(_) => success_count += 1,
+                            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                                eprintln!(
+                                    "error: target already exists: {}; refusing to overwrite",
+                                    plan.target_path.display()
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "error copying {} to {}: {:#}",
+                                    plan.source_path.display(),
+                                    plan.target_path.display(),
+                                    e
+                                );
+                            }
                         }
                     }
                     ApplyAction::Move => {
-                        // Safeguard 2 (AGENTS.md rule): Never move user screenshots in watched folders
-                        let in_screenshot_folder = reading_folders
-                            .iter()
-                            .any(|f| plan.source_path.starts_with(f));
-                        if in_screenshot_folder {
-                            eprintln!(
-                                "error: cannot move user screenshot {} (per AGENTS.md rule: user screenshots are read-only; use --action copy or the generated script)",
-                                plan.source_path.display()
-                            );
-                            continue;
-                        }
-
-                        if let Err(e) = fs::rename(&plan.source_path, &plan.target_path) {
-                            eprintln!(
-                                "error renaming {} to {}: {:#}",
-                                plan.source_path.display(),
-                                plan.target_path.display(),
-                                e
-                            );
-                        } else {
-                            success_count += 1;
-                        }
+                        // Invariant per AGENTS.md: Never write to, move or delete a user's screenshots.
+                        eprintln!(
+                            "error: cannot move user screenshot {} (per AGENTS.md rule: user screenshots are read-only; use --action copy or system trash)",
+                            plan.source_path.display()
+                        );
                     }
                 }
             }
@@ -413,45 +446,44 @@ fn print_table(plans: &[PlannedRename], elapsed: std::time::Duration, dry_run: b
     }
 }
 
-fn quote_ps(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "''"))
-}
-
-#[cfg(not(windows))]
-fn quote_sh(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
 fn print_script(plans: &[PlannedRename]) {
-    #[cfg(windows)]
-    {
-        println!("# PowerShell Batch Rename Script generated by gyotaku");
-        println!("$ErrorActionPreference = 'Stop'\n");
-        for p in plans {
-            if p.source_path != p.target_path {
-                let src_q = quote_ps(&p.source_path.to_string_lossy());
-                let target_q = quote_ps(&p.target_path.to_string_lossy());
-                let new_name_q = quote_ps(&p.recommended_filename);
-                println!(
-                    "if (Test-Path -LiteralPath {target_q}) {{\n    Write-Error (\"Target already exists: \" + {target_q})\n}} else {{\n    Rename-Item -LiteralPath {src_q} -NewName {new_name_q}\n}}"
-                );
-            }
-        }
-    }
+    let commands: Vec<(&Path, &Path, &str)> = plans
+        .iter()
+        .filter(|p| p.source_path != p.target_path)
+        .map(|p| {
+            (
+                p.source_path.as_path(),
+                p.target_path.as_path(),
+                p.recommended_filename.as_str(),
+            )
+        })
+        .collect();
+    crate::platform::print_rename_script(&commands);
+}
 
-    #[cfg(not(windows))]
-    {
-        println!("#!/bin/sh");
-        println!("# Shell Batch Rename Script generated by gyotaku");
-        println!("set -e\n");
-        for p in plans {
-            if p.source_path != p.target_path {
-                let src_q = quote_sh(&p.source_path.to_string_lossy());
-                let target_q = quote_sh(&p.target_path.to_string_lossy());
-                println!(
-                    "if [ -e {target_q} ]; then\n    echo \"Target already exists: \"{target_q} >&2\n    exit 1\nfi\nmv -n -- {src_q} {target_q}"
-                );
-            }
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_copy_no_overwrite_refuses_to_clobber_existing_target() {
+        let temp_dir = std::env::temp_dir().join("gyotaku_atomic_copy_unit_test");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let src = temp_dir.join("source.png");
+        let dst = temp_dir.join("target.png");
+        fs::write(&src, b"source image bytes").unwrap();
+        fs::write(&dst, b"original existing content").unwrap();
+
+        let result = copy_no_overwrite(&src, &dst);
+        assert!(result.is_err(), "must fail when target exists");
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::AlreadyExists);
+
+        // Verify dst content was untouched
+        let dst_content = fs::read(&dst).unwrap();
+        assert_eq!(dst_content, b"original existing content");
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }
