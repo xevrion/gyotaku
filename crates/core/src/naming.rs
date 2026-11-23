@@ -992,4 +992,61 @@ mod tests {
 
         let _ = std::fs::remove_file(config_file);
     }
+
+    #[test]
+    fn test_adversarial_traversal_and_injection() {
+        let nature = InfographicNature::Standard;
+
+        // Path traversal payload
+        let slug = slugify(nature, "../../../../etc/passwd", None, CaseStyle::Snake, 50);
+        assert_eq!(slug, "etc_passwd");
+        assert!(!slug.contains('.'));
+        assert!(!slug.contains('/'));
+
+        // Shell injection payload
+        let slug_inject = slugify(nature, "image; rm -rf / #", None, CaseStyle::Snake, 50);
+        assert_eq!(slug_inject, "image_rm_rf");
+
+        // Windows reserved name with extension
+        let slug_prn = slugify(nature, "PRN", None, CaseStyle::Snake, 50);
+        assert_eq!(slug_prn, "file_prn");
+
+        let mut used = HashSet::new();
+        let name = resolve_collision(&slug_prn, "png", CaseStyle::Snake, &mut used);
+        assert_eq!(name, "file_prn.png");
+    }
+
+    #[test]
+    fn test_adversarial_empty_and_corrupt_lines() {
+        assert!(extract_title(&[]).is_none());
+
+        let corrupt_lines = vec![
+            Line {
+                text: "   ".to_string(),
+                rect: Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+                score: 0.0,
+            },
+            Line {
+                text: "!@#$".to_string(),
+                rect: Rect { x: 0.01, y: 0.01, w: 0.05, h: 0.05 },
+                score: 0.3,
+            },
+        ];
+        assert!(extract_title(&corrupt_lines).is_none());
+    }
+
+    #[test]
+    fn test_plan_rename_data_gaps() {
+        let mut used = HashSet::new();
+        let options = NameOptions {
+            fallback: FallbackStrategy::Keep,
+            ..NameOptions::default()
+        };
+        let path = PathBuf::from("screenshot_123.png");
+
+        // Zero-text image should produce data_gaps = ["no_text_detected"]
+        let plan = plan_rename(&path, &[], &options, &mut used).expect("should return keep plan");
+        assert_eq!(plan.data_gaps, vec!["no_text_detected".to_string()]);
+        assert_eq!(plan.recommended_filename, "screenshot_123.png");
+    }
 }
