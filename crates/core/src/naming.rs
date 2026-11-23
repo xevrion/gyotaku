@@ -1,6 +1,8 @@
 //! Infographic and screenshot layout analysis, title extraction, and filename recommendation.
 
 use std::collections::HashSet;
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -151,16 +153,14 @@ impl NameOptions {
         let mut opts = Self::default();
 
         // 1. Check custom JSON path, or fallback to ./config.json if it exists.
-        let json_path = custom_json_path
-            .map(|p| p.to_path_buf())
-            .or_else(|| {
-                let candidate = PathBuf::from("config.json");
-                if candidate.exists() {
-                    Some(candidate)
-                } else {
-                    None
-                }
-            });
+        let json_path = custom_json_path.map(|p| p.to_path_buf()).or_else(|| {
+            let candidate = PathBuf::from("config.json");
+            if candidate.exists() {
+                Some(candidate)
+            } else {
+                None
+            }
+        });
 
         if let Some(path) = json_path
             && let Ok(contents) = std::fs::read_to_string(&path)
@@ -364,10 +364,16 @@ pub fn classify_nature(lines: &[Line]) -> InfographicNature {
         combined_text.push_str(&line.text.to_lowercase());
     }
 
-    if COMPARISON_KEYWORDS.iter().any(|k| combined_text.contains(k)) {
+    if COMPARISON_KEYWORDS
+        .iter()
+        .any(|k| combined_text.contains(k))
+    {
         return InfographicNature::Comparison;
     }
-    if CHEAT_SHEET_KEYWORDS.iter().any(|k| combined_text.contains(k)) {
+    if CHEAT_SHEET_KEYWORDS
+        .iter()
+        .any(|k| combined_text.contains(k))
+    {
         return InfographicNature::CheatSheet;
     }
     if TIMELINE_KEYWORDS.iter().any(|k| combined_text.contains(k)) {
@@ -697,8 +703,83 @@ pub fn slugify(
     final_base
 }
 
+/// Returns true if two files on disk have identical byte contents.
+/// Compares metadata size first, then streams in 8KB chunks.
+pub fn files_have_same_content(path_a: &Path, path_b: &Path) -> bool {
+    let Ok(meta_a) = path_a.metadata() else {
+        return false;
+    };
+    let Ok(meta_b) = path_b.metadata() else {
+        return false;
+    };
+    if meta_a.len() != meta_b.len() {
+        return false;
+    }
+    if meta_a.len() == 0 {
+        return true;
+    }
+    let Ok(mut file_a) = std::fs::File::open(path_a) else {
+        return false;
+    };
+    let Ok(mut file_b) = std::fs::File::open(path_b) else {
+        return false;
+    };
+    use std::io::Read;
+    let mut buf_a = [0u8; 8192];
+    let mut buf_b = [0u8; 8192];
+    loop {
+        let Ok(n_a) = file_a.read(&mut buf_a) else {
+            return false;
+        };
+        let Ok(n_b) = file_b.read(&mut buf_b) else {
+            return false;
+        };
+        if n_a != n_b || buf_a[..n_a] != buf_b[..n_b] {
+            return false;
+        }
+        if n_a == 0 {
+            return true;
+        }
+    }
+}
+
+/// Changes a filename without replacing an existing target or copying image bytes.
+pub fn rename_no_overwrite(source: &Path, target: &Path) -> io::Result<()> {
+    if source == target {
+        return Ok(());
+    }
+    if fs::symlink_metadata(source)?.file_type().is_symlink() {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "symlink sources are not renamed",
+        ));
+    }
+    // A hard link reserves the target name without replacing it and shares the
+    // same file data. Removing the old name completes the rename.
+    fs::hard_link(source, target)?;
+    if let Err(error) = fs::remove_file(source) {
+        let _ = fs::remove_file(target);
+        return Err(error);
+    }
+    Ok(())
+}
+
 /// Resolves duplicate recommended filenames in a batch by appending sequential counters.
 pub fn resolve_collision(
+    base_name: &str,
+    ext: &str,
+    case_style: CaseStyle,
+    used_names: &mut HashSet<String>,
+) -> String {
+    resolve_collision_with_disk(None, base_name, ext, case_style, used_names)
+}
+
+/// Resolves duplicate recommended filenames in a batch, checking both in-memory batch reservations
+/// and whether a conflicting file already exists on disk in the target directory.
+/// If `source_file_or_dir` points to an existing file and the target on disk already has identical
+/// content (or is the source file itself), collision is averted on repeated runs.
+pub fn resolve_collision_with_disk(
+    source_file_or_dir: Option<&Path>,
     base_name: &str,
     ext: &str,
     case_style: CaseStyle,
@@ -717,7 +798,33 @@ pub fn resolve_collision(
         format!("{base_name}.{ext}")
     };
 
-    if !used_names.contains(&initial.to_ascii_lowercase()) {
+    let (parent, source_file) = match source_file_or_dir {
+        Some(p) if p.is_dir() => (Some(p), None),
+        Some(p) => (p.parent(), Some(p)),
+        None => (None, None),
+    };
+
+    let is_collision = |candidate_name: &str| -> bool {
+        let lower = candidate_name.to_ascii_lowercase();
+        let Some(dir) = parent else {
+            return used_names.contains(&lower);
+        };
+        let candidate_path = dir.join(candidate_name);
+        if let Some(src) = source_file {
+            if candidate_path == src {
+                return false;
+            }
+            if candidate_path.exists() && files_have_same_content(src, &candidate_path) {
+                return false;
+            }
+        }
+        if used_names.contains(&lower) {
+            return true;
+        }
+        candidate_path.exists()
+    };
+
+    if !is_collision(&initial) {
         used_names.insert(initial.to_ascii_lowercase());
         return initial;
     }
@@ -730,7 +837,7 @@ pub fn resolve_collision(
             format!("{base_name}{delim}{counter}.{ext}")
         };
 
-        if !used_names.contains(&candidate.to_ascii_lowercase()) {
+        if !is_collision(&candidate) {
             used_names.insert(candidate.to_ascii_lowercase());
             return candidate;
         }
@@ -790,7 +897,17 @@ pub fn plan_rename(
             data_gaps.push("no_high_confidence_title".to_string());
             match options.fallback {
                 FallbackStrategy::Skip => return None,
-                _ => TitleCandidate {
+                FallbackStrategy::Error => {
+                    return Some(PlannedRename {
+                        source_path: path.to_path_buf(),
+                        recommended_filename: String::new(),
+                        target_path: path.to_path_buf(),
+                        confidence: 0.0,
+                        nature: InfographicNature::Standard.as_str().to_string(),
+                        data_gaps,
+                    });
+                }
+                FallbackStrategy::Keep => TitleCandidate {
                     raw_text: "untitled".to_string(),
                     confidence: 0.0,
                     bounding_box: Rect {
@@ -821,9 +938,11 @@ pub fn plan_rename(
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
-                jiff::Timestamp::from_second(dur as i64)
-                    .ok()
-                    .map(|ts| ts.to_zoned(jiff::tz::TimeZone::system()).strftime("%Y-%m-%d").to_string())
+                jiff::Timestamp::from_second(dur as i64).ok().map(|ts| {
+                    ts.to_zoned(jiff::tz::TimeZone::system())
+                        .strftime("%Y-%m-%d")
+                        .to_string()
+                })
             })
     } else {
         None
@@ -837,7 +956,8 @@ pub fn plan_rename(
         options.max_length,
     );
 
-    let final_filename = resolve_collision(&base_slug, &ext, options.case_style, used_names);
+    let final_filename =
+        resolve_collision_with_disk(Some(path), &base_slug, &ext, options.case_style, used_names);
     let target_path = path.with_file_name(&final_filename);
 
     Some(PlannedRename {
@@ -860,16 +980,10 @@ mod tests {
         let nature = InfographicNature::Comparison;
 
         let snake = slugify(nature, title, None, CaseStyle::Snake, 50);
-        assert_eq!(
-            snake,
-            "comparison_docker_vs_podman_fast_container_engines"
-        );
+        assert_eq!(snake, "comparison_docker_vs_podman_fast_container_engines");
 
         let kebab = slugify(nature, title, None, CaseStyle::Kebab, 50);
-        assert_eq!(
-            kebab,
-            "comparison-docker-vs-podman-fast-container-engines"
-        );
+        assert_eq!(kebab, "comparison-docker-vs-podman-fast-container-engines");
 
         let title_case = slugify(nature, title, None, CaseStyle::Title, 50);
         assert_eq!(
@@ -971,6 +1085,29 @@ mod tests {
     }
 
     #[test]
+    fn rename_changes_only_the_name_and_never_overwrites() {
+        let dir = std::env::temp_dir().join("gyotaku_rename_no_overwrite_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("source.png");
+        let occupied = dir.join("occupied.png");
+        let target = dir.join("named.png");
+        fs::write(&source, b"image bytes").unwrap();
+        fs::write(&occupied, b"other bytes").unwrap();
+
+        let error = rename_no_overwrite(&source, &occupied).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&occupied).unwrap(), b"other bytes");
+        assert!(source.exists());
+
+        rename_no_overwrite(&source, &target).unwrap();
+        assert!(!source.exists());
+        assert_eq!(fs::read(&target).unwrap(), b"image bytes");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 2);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn test_load_config_from_json() {
         let json_content = r#"{
             "naming": {
@@ -1023,12 +1160,22 @@ mod tests {
         let corrupt_lines = vec![
             Line {
                 text: "   ".to_string(),
-                rect: Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 0.0,
+                    h: 0.0,
+                },
                 score: 0.0,
             },
             Line {
                 text: "!@#$".to_string(),
-                rect: Rect { x: 0.01, y: 0.01, w: 0.05, h: 0.05 },
+                rect: Rect {
+                    x: 0.01,
+                    y: 0.01,
+                    w: 0.05,
+                    h: 0.05,
+                },
                 score: 0.3,
             },
         ];
@@ -1048,5 +1195,29 @@ mod tests {
         let plan = plan_rename(&path, &[], &options, &mut used).expect("should return keep plan");
         assert_eq!(plan.data_gaps, vec!["no_text_detected".to_string()]);
         assert_eq!(plan.recommended_filename, "screenshot_123.png");
+    }
+
+    #[test]
+    fn test_collision_resolution_with_disk() {
+        let temp_dir = std::env::temp_dir().join("gyotaku_disk_collision_test");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create overview.png on disk
+        let disk_file = temp_dir.join("overview.png");
+        std::fs::write(&disk_file, b"dummy").unwrap();
+
+        let mut used = HashSet::new();
+        // Even though `used` is empty, overview.png exists on disk, so it must return overview_2.png
+        let name = resolve_collision_with_disk(
+            Some(&temp_dir),
+            "overview",
+            "png",
+            CaseStyle::Snake,
+            &mut used,
+        );
+        assert_eq!(name, "overview_2.png");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

@@ -66,3 +66,6 @@ pub use imp::only_in_the_cloud;
 /// up before the desktop does. A port with no way to watch the clipboard
 /// returns a handle that never sends anything.
 pub use imp::{ClipboardWatch, watch_clipboard};
+
+/// Prints a shell script for batch renaming without replacing a target.
+pub use imp::print_rename_script;

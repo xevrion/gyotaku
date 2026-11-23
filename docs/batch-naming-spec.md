@@ -251,7 +251,7 @@ pub struct PlannedRename {
    - Convert extracted title to target casing, strip illegal characters, truncate gracefully.
    - Track planned names in a hash set. Append numeric suffixes (`-2`, `-3`) for duplicates.
 6. **Output generation**:
-   - Render dry-run table, generate script file, or perform atomic renames if `--apply` is specified.
+   - Render dry-run table, generate script file, or rename files in place without overwriting existing targets if `--apply` is specified.
 
 ---
 

@@ -2661,6 +2661,9 @@ dependencies = [
  "jiff",
  "libc",
  "notify",
+ "rayon",
+ "serde",
+ "serde_json",
  "windows-sys 0.61.2",
  "x11rb 0.14.0",
 ]

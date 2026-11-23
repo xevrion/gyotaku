@@ -1,3 +1,4 @@
+mod batch_name;
 mod clipboard;
 mod indexer;
 mod platform;
@@ -57,6 +58,48 @@ enum Command {
         /// ones in your config)
         #[arg(long = "script")]
         scripts: Vec<String>,
+    },
+    /// Recommend and safely batch-rename screenshots and infographics based on visual OCR headings
+    Name {
+        /// Files or directories to process recursively
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// Process at most this many images per run
+        #[arg(long)]
+        limit: Option<std::num::NonZeroUsize>,
+        /// Order images before applying --limit
+        #[arg(long, value_enum, default_value_t = batch_name::SortOrder::Newest)]
+        sort: batch_name::SortOrder,
+        /// Report proposed renames without modifying files on disk (default behavior)
+        #[arg(long, default_value_t = true)]
+        dry_run: bool,
+        /// Execute renames on disk
+        #[arg(long)]
+        apply: bool,
+        /// Skip confirmation prompt when applying renames
+        #[arg(short = 'y', long)]
+        yes: bool,
+        /// Output report format
+        #[arg(long, value_enum, default_value_t = batch_name::OutputFormat::Table)]
+        format: batch_name::OutputFormat,
+        /// Word casing style for filenames
+        #[arg(long, value_enum, default_value_t = batch_name::CaseStyleArg::Snake)]
+        case: batch_name::CaseStyleArg,
+        /// Maximum slug character length before truncating at word boundaries
+        #[arg(long, default_value_t = 50)]
+        max_length: usize,
+        /// Prefix filename with date derived from image mtime (e.g. 2026-11-23_name.png)
+        #[arg(long)]
+        prefix_date: bool,
+        /// Cores to use per image during uncached OCR
+        #[arg(long, default_value_t = gyotaku_core::default_threads())]
+        threads: usize,
+        /// Strategy when no high-confidence title is extracted (skip, keep, error)
+        #[arg(long, value_enum, default_value_t = batch_name::FallbackArg::Skip)]
+        fallback: batch_name::FallbackArg,
+        /// Optional path to custom config.json
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
     /// Run by the clipboard watcher for each image copied, see clipboard::hand_over
     #[command(hide = true)]
@@ -127,6 +170,37 @@ fn main() -> Result<()> {
                     .collect::<Result<_>>()?
             };
             ocr(&image, boxes, threads, &scripts)?
+        }
+        Command::Name {
+            paths,
+            limit,
+            sort,
+            dry_run,
+            apply,
+            yes,
+            format,
+            case,
+            max_length,
+            prefix_date,
+            threads,
+            fallback,
+            config,
+        } => {
+            batch_name::run(batch_name::BatchRunOptions {
+                paths,
+                limit: limit.map(std::num::NonZeroUsize::get),
+                sort,
+                dry_run: !apply || dry_run,
+                apply,
+                yes,
+                format,
+                case,
+                max_length,
+                prefix_date,
+                threads,
+                fallback,
+                config_file: config,
+            })?;
         }
         Command::ClipboardIncoming { dir } => clipboard::hand_over(&dir)?,
     }
